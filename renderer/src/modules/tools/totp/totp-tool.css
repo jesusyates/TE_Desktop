@@ -1,0 +1,112 @@
+.totp-tool {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
+}
+
+.totp-tool__lead {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+
+.totp-tool__field {
+  margin-bottom: 1rem;
+}
+
+.totp-tool__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 4.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.85rem;
+}
+
+.totp-tool__error {
+  color: var(--danger-foreground, #e85d5d);
+  font-size: 0.875rem;
+  margin: 0 0 0.75rem;
+}
+
+.totp-tool__empty {
+  padding: 1.5rem 0;
+  text-align: center;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+  font-size: 0.9rem;
+}
+
+.totp-tool__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+}
+
+.totp-tool__meta-k {
+  font-weight: 500;
+  margin-right: 0.35rem;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.75));
+}
+
+.totp-tool__code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.totp-tool__code {
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  min-height: 2.5rem;
+  line-height: 1.2;
+}
+
+.totp-tool__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.totp-tool__countdown {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, rgba(255, 255, 255, 0.65));
+}
+
+.totp-tool__progress-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-muted, rgba(255, 255, 255, 0.08));
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.totp-tool__progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent, #5b8cff);
+  transition: width 0.15s linear;
+}
+
+.totp-tool__offset {
+  max-width: 12rem;
+}
+
+.totp-tool__toast {
+  display: inline-block;
+  margin-inline-start: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--success-foreground, #6cc48a);
+}
+
+.totp-tool__gen-err {
+  font-size: 0.85rem;
+  color: var(--warning-foreground, #e0a030);
+  margin: 0.25rem 0 0;
+}

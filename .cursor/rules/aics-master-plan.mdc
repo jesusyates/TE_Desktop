@@ -1,0 +1,122 @@
+---
+description: AICS product定位、架构边界与阶段执行总规则
+alwaysApply: true
+---
+
+# AICS Master Plan
+
+## 项目定义
+- 项目名称：AICS — AI Desktop Execution System（AI桌面执行系统）。
+- AICS 是独立产品，但与 ToolEagle 共用 AI Core 与 Global Backend。
+- AICS 不是万能桌面操控器，不是纯自动点击工具，而是“有眼睛、有大脑、有手、有记忆”的桌面 AI 执行工作系统。
+- 长期目标：成为桌面侧的 AI 工作入口、执行入口、记忆入口、资产入口。
+
+## 与 ToolEagle 的关系
+- ToolEagle = Web 流量入口与增长系统。
+- AICS = Windows 桌面深度执行产品。
+- AI Core / Global Backend 统一共享。
+- 产品层独立，底层能力统一。
+- 禁止重复造：AI Router、Memory Engine、Template Engine、Asset Engine、Auth、Billing。
+
+## 架构原则
+- 必须采用：Shared Core Backend + Product Domain + Country Capability Layer。
+- Shared Core Backend 包含：Auth、Users、Billing、Entitlements、AI Router、Prompt Registry、Task Core、Memory Core、Template Core、Asset Core、Safety/Audit/Monitoring。
+- Product Domain：ToolEagle Domain、AICS Domain。
+- Country Capability Layer：按国家/地区配置能力、模板、策略、本地平台接入；不允许写死在单一产品业务逻辑。
+
+## 全球化原则
+- 先中国落地，但架构必须全球兼容。
+- 不做中国特化死架构。
+- 后续支持全球国家本土化扩展。
+
+## 第一阶段（内容创造工作流）
+- 用户：短视频创作者、自媒体内容工作者、营销文案用户、小团队内容运营。
+- 目标：Windows 桌面客户端支持一句话输入、导入资料、生成完整内容结果包，并沉淀历史任务、偏好与内容资产。
+- 第一阶段只做 6 个功能：
+  1) 一句话创建任务
+  2) 资料导入（文本/文件/链接/历史资料）
+  3) 完整结果包生成
+  4) 历史任务记录
+  5) 风格/偏好记忆
+  6) 历史结果复用与再次生成
+
+## 结果包结构
+- 主题、角度、标题、Hook、内容结构、正文/脚本、文案、标签、发布建议。
+
+## 系统四层能力
+- 眼睛：读取文本、文件、链接、历史内容。
+- 大脑：理解任务、规划、生成、结合历史优化。
+- 手：自动整理、自动组装、自动保存、模板复用、结构化输出。
+- 记忆：保存历史任务、偏好、模板、结果与资产。
+
+## 产品形态规则
+- v1 主产品必须是 Windows 桌面客户端。
+- 网页只做辅助层：下载页、介绍页、订阅页、帮助中心。
+- 不允许将网页层当作主工作台。
+- 客户端必须体现工作台感，不是普通网站感。
+- 前端需为自动化控制台、多国家本土能力、多工具协同预留结构。
+
+## 页面结构
+- 首页/工作台、新建任务页、结果页、历史记录页、模板页、设置页、自动化控制台（预留）。
+
+## AICS Domain 数据模型（必须支持）
+- workspaces
+- tasks
+- task_inputs
+- task_outputs
+- task_runs
+- automation_steps
+- execution_sessions
+- desktop_assets
+- style_preferences
+- client_states
+- device_bindings
+- export_records
+- local_sync_metadata
+- task_feedback
+
+## AI Core 规则
+- 使用统一 AI Core。
+- 必须包含：Router / Prompt / Task / Memory / Template / Asset。
+- Prompt 必须支持：global/product/locale/workflow/user-preference 分层。
+- 模型使用主模型 + 备用模型双层结构。
+- 不允许接入过多模型导致复杂化。
+- 不允许产品逻辑绑死单一模型供应商。
+
+## 安全规则
+- 所有产品/网站/应用必须优先建设高强度安全防护体系。
+- 必须包含防攻击、防破解、防逆向、防反编译。
+- 安全层属于核心基础设施，必须从第一天纳入。
+- 客户端禁止持有核心密钥。
+- 客户端禁止绕过后端直连模型。
+- 所有生成与高风险能力必须经过后端统一安全链路。
+
+## 强制执行规则（禁止）
+- 禁止先造终极底座。
+- 禁止 v1 扩展成万能 Agent。
+- 禁止 v1 做任意桌面操控。
+- 禁止延后建设记忆系统。
+- 禁止功能堆砌，必须以结果为中心。
+- 禁止与 ToolEagle 重复造底层能力。
+- 禁止只做一次性生成，不做资产沉淀。
+- 禁止中国特化死架构。
+- 禁止偏离品牌化、全球化、长期化目标。
+- 禁止把 AICS 做成普通网页主产品。
+- 禁止混淆 ToolEagle 与 AICS 的产品定位。
+- 禁止把 AICS 专属数据强行塞进 ToolEagle Web 域模型。
+
+## 阶段开发顺序
+- Phase 1：可用闭环（输入→生成→保存→复用）
+- Phase 2：记忆强化（偏好、历史、上下文）
+- Phase 3：执行强化（自动组装、导出、自动化控制台、工具驱动）
+- Phase 4：本地执行增强（更强本地执行器、外部工具能力）
+- Phase 5：全球本土化扩展（国家能力层扩展）
+
+## 成功标准
+- 用户能完成真实任务。
+- 用户愿意重复使用。
+- 用户历史内容开始积累。
+- 系统开始体现“越用越懂”。
+- 产品开始形成依赖。
+- 具备未来桌面执行系统的演化基础。
+- 具备全球本土化扩展基础。

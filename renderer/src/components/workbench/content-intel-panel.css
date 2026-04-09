@@ -1,0 +1,122 @@
+.content-intel-panel {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  background: var(--surface-elevated, rgba(0, 0, 0, 0.2));
+  max-height: min(42vh, 520px);
+  overflow: auto;
+}
+
+.content-intel-panel--idle {
+  border-style: dashed;
+  padding: 8px 10px;
+}
+
+.content-intel-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.content-intel-panel__title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.content-intel-panel__lead {
+  margin: 0 0 8px;
+}
+
+.content-intel-panel__err {
+  color: var(--danger, #f87171);
+  margin: 0 0 8px;
+}
+
+.content-intel-panel__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.content-intel-panel__pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+}
+
+.content-intel-panel__pill--accent {
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+.content-intel-panel__topic-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.content-intel-panel__topic-btn {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  color: var(--accent, #93c5fd);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.content-intel-panel__details {
+  margin-top: 6px;
+}
+
+.content-intel-panel__details summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.content-intel-panel__steps {
+  margin: 8px 0 0;
+  padding-left: 1.1rem;
+}
+
+.content-intel-panel__step {
+  margin-bottom: 10px;
+}
+
+.content-intel-panel__step-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.content-intel-panel__role {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.content-intel-panel__payload {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  max-height: 10rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

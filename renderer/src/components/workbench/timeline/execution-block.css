@@ -1,0 +1,144 @@
+/* D-3-2：单任务 Execution Block（卡片化时间线节点，非聊天气泡） */
+
+.execution-block {
+  border-radius: 14px;
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
+  background: var(--bg-card, rgba(255, 255, 255, 0.03));
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-width: 52rem;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.execution-block__header {
+  flex-shrink: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.02));
+}
+
+.execution-block__prompt {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin: 0 0 10px;
+  word-break: break-word;
+}
+
+.execution-block__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+.execution-block__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.execution-block__meta-label {
+  opacity: 0.65;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+}
+
+.execution-block__mode-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+}
+
+.execution-block__body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+}
+
+.execution-block__body .execution-control-bar {
+  margin: 0;
+}
+
+.execution-timeline-empty {
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 28px 24px;
+  border-radius: 14px;
+  border: 1px dashed var(--border-default, rgba(255, 255, 255, 0.14));
+  background: var(--bg-card, rgba(255, 255, 255, 0.02));
+  text-align: center;
+}
+
+.execution-timeline-empty__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 10px;
+  opacity: 0.92;
+}
+
+.execution-timeline-empty__desc {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  margin: 0;
+  opacity: 0.72;
+}
+
+.execution-timeline-empty__desc + .execution-timeline-empty__desc {
+  margin-top: 8px;
+}
+
+/* D-7-5Z：首页示例 chip，轻量可换行 */
+.execution-timeline-empty__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 18px;
+  padding-top: 4px;
+}
+
+.execution-timeline-empty__chip {
+  appearance: none;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  font-family: inherit;
+  color: var(--text-secondary, inherit);
+  background: transparent;
+  border: 1px solid var(--border-subtle, var(--border-default));
+  border-radius: 999px;
+  cursor: pointer;
+  max-width: 100%;
+  text-align: center;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.execution-timeline-empty__chip:hover {
+  background: var(--layer-hover, rgba(255, 255, 255, 0.06));
+  border-color: var(--border-default);
+  color: var(--text-primary, inherit);
+}
+
+.execution-timeline-empty__chip:focus-visible {
+  outline: 2px solid var(--accent, var(--brand-primary, #5b8cc9));
+  outline-offset: 2px;
+}

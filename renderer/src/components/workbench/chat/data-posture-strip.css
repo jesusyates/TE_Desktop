@@ -1,0 +1,29 @@
+.data-posture-strip {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--topbar-border, rgba(255, 255, 255, 0.1));
+  background: var(--surface-elevated, rgba(255, 255, 255, 0.03));
+}
+
+.data-posture-strip__title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+  margin-bottom: 6px;
+}
+
+.data-posture-strip__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.data-posture-strip__line {
+  margin: 0;
+  line-height: 1.35;
+}

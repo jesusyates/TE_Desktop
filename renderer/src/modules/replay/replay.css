@@ -1,0 +1,115 @@
+.execution-replay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  overflow: hidden;
+}
+
+.execution-replay-panel__header {
+  flex-shrink: 0;
+}
+
+.execution-replay-panel__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.execution-replay-panel__prompt {
+  margin: 0;
+  word-break: break-word;
+}
+
+.execution-replay-panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+  overflow: auto;
+}
+
+.execution-replay-panel__subtitle {
+  margin: 0 0 6px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.execution-replay-panel__log-scroll {
+  max-height: 220px;
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  padding: 8px;
+}
+
+.execution-replay-toolbar {
+  flex-shrink: 0;
+  padding: 8px var(--space-4, 16px) 0;
+}
+
+.execution-replay-toolbar__btn {
+  font-size: 0.8rem;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.06));
+  color: inherit;
+}
+
+.execution-replay-controls {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+}
+
+.execution-replay-controls__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.execution-replay-controls__btn {
+  font-size: 0.8rem;
+  padding: 6px 14px;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.06));
+  color: inherit;
+}
+
+.execution-replay-controls__btn--primary {
+  background: rgba(96, 165, 250, 0.25);
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
+.execution-replay-controls__btn--ghost {
+  opacity: 0.85;
+}
+
+.execution-replay-controls__scrub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.execution-replay-controls__range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent, #60a5fa);
+}
+
+.execution-replay-controls__pct {
+  flex-shrink: 0;
+  min-width: 2.5rem;
+  text-align: right;
+}

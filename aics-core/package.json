@@ -1,0 +1,15 @@
+{
+  "name": "aics-core",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AICS Core light backend (task + analyze)",
+  "main": "server.js",
+  "scripts": {
+    "prestart": "npm run build:shared-spec --prefix ..",
+    "start": "node server.js",
+    "smoke:contracts": "node scripts/smoke/contracts-smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

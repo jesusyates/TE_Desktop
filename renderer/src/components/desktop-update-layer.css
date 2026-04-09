@@ -1,0 +1,43 @@
+/* AICS 桌面更新：soft 仅 toast；force 全屏阻断（唯一允许打断场景） */
+
+.desktop-update-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12000;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--surface-elevated, rgba(32, 36, 42, 0.96));
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.desktop-update-force-root {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  padding: 24px;
+}
+
+.desktop-update-force-card {
+  width: min(440px, 100%);
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--surface-elevated, #1a1f26);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.14));
+}
+
+.desktop-update-force-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}

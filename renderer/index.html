@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN" class="theme-light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AICS Desktop</title>
+  </head>
+  <!-- 首帧与 localStorage 一致：默认 light；在模块与 React 之前同步，避免闪屏 -->
+  <body data-theme="light">
+    <script>
+      (function () {
+        var LEGACY = "aics-ui-theme";
+        var SPEC = "theme";
+        var t = null;
+        try {
+          var a = localStorage.getItem(LEGACY);
+          var b = localStorage.getItem(SPEC);
+          if (a === "dark" || a === "light") t = a;
+          else if (b === "dark" || b === "light") t = b;
+        } catch (e) {}
+        if (t !== "dark" && t !== "light") {
+          t = "light";
+          try {
+            localStorage.setItem(LEGACY, "light");
+            localStorage.setItem(SPEC, "light");
+          } catch (e2) {}
+        }
+        var root = document.documentElement;
+        root.classList.remove("theme-light", "theme-dark");
+        root.classList.add(t === "dark" ? "theme-dark" : "theme-light");
+        document.body.setAttribute("data-theme", t);
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

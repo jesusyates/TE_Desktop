@@ -1,0 +1,100 @@
+.task-clarification-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 12050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.task-clarification-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.task-clarification-dialog__panel {
+  position: relative;
+  z-index: 1;
+  width: min(400px, calc(100vw - 32px));
+  max-height: min(72vh, 520px);
+  overflow: auto;
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--surface-elevated, #2c2c2c);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.task-clarification-dialog__title {
+  margin: 0 0 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.task-clarification-dialog__fieldset {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.task-clarification-dialog__legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--text-muted, #aaa);
+}
+
+.task-clarification-dialog__options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-clarification-dialog__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.task-clarification-dialog__option input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.task-clarification-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.task-clarification-dialog__btn {
+  min-width: 72px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.task-clarification-dialog__btn--ghost {
+  background: transparent;
+  color: inherit;
+  border-color: var(--border-subtle, #444);
+}
+
+.task-clarification-dialog__btn--primary {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}

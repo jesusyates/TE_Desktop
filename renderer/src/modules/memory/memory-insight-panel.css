@@ -1,0 +1,55 @@
+.memory-insight-panel {
+  margin-top: 0;
+}
+
+.memory-insight-panel__note {
+  font-size: 0.72rem;
+  margin: 0 0 0.75rem;
+  opacity: 0.75;
+}
+
+.memory-insight-panel__section {
+  margin-top: 0.65rem;
+}
+
+.memory-insight-panel__section:first-of-type {
+  margin-top: 0;
+}
+
+.memory-insight-panel__heading {
+  margin: 0 0 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+}
+
+.memory-insight-panel__list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.memory-insight-panel__item {
+  margin: 0.18rem 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.memory-insight-panel__muted {
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.memory-insight-panel__empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.memory-insight-panel__failure-foot {
+  margin: 0.4rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+  line-height: 1.35;
+}

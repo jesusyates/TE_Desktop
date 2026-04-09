@@ -1,0 +1,67 @@
+.memory-mini-overview {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.memory-mini-overview__header {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.memory-mini-overview__source {
+  font-weight: 400;
+  font-size: 0.72rem;
+}
+
+.memory-mini-overview__block {
+  margin-top: 0.45rem;
+}
+
+.memory-mini-overview__sub {
+  margin: 0 0 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+}
+
+.memory-mini-overview__list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.memory-mini-overview__item {
+  margin: 0.15rem 0;
+  word-break: break-all;
+}
+
+.memory-mini-overview__preview {
+  font-size: 0.68rem;
+  opacity: 0.85;
+}
+
+.memory-mini-overview__empty {
+  margin: 0;
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.memory-mini-overview__footer {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.memory-mini-overview__link {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(120, 175, 255, 0.95);
+  text-decoration: none;
+}
+
+.memory-mini-overview__link:hover {
+  text-decoration: underline;
+}

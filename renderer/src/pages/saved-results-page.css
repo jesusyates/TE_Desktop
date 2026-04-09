@@ -1,0 +1,29 @@
+.saved-results-page__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.saved-results-page__row {
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-default, var(--border, rgba(255, 255, 255, 0.1)));
+}
+
+.saved-results-page__row:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.saved-results-page__prompt-preview {
+  margin: 0.35rem 0;
+}
+
+.saved-results-page__meta {
+  margin-bottom: 0.5rem;
+}
+
+.saved-results-page__actions {
+  flex-wrap: wrap;
+}

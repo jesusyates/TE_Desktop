@@ -1,0 +1,46 @@
+{
+  "name": "aics-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AICS Desktop v0.1 — Backend: node shared-core-backend/server.js (repo root). Dev UI: npm run dev (Vite 5173 + Electron). Optional: cmd /c npm run dev on Windows.",
+  "main": "dist/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev:backend": "node shared-core-backend/server.js",
+    "dev:web": "vite --config renderer/vite.config.ts",
+    "dev:main:watch": "concurrently \"tsc -p tsconfig.main.json --watch\" \"tsc -p tsconfig.preload.cjs.json --watch\"",
+    "dev:electron": "wait-on http://localhost:5173 file:dist/main/index.js && electron .",
+    "dev": "npm run build:shared-spec && concurrently \"npm run dev:web\" \"npm run dev:main:watch\" \"npm run dev:electron\"",
+    "build:shared-spec": "tsc -p tsconfig.shared-node.json",
+    "build:renderer": "vite build --config renderer/vite.config.ts",
+    "build:main": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.cjs.json",
+    "build": "npm run build:shared-spec && npm run build:renderer && npm run build:main",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p renderer/tsconfig.json --noEmit",
+    "test:c7-storage": "node shared-core-backend/scripts/c7-storage-smoke.js",
+    "test:c8-identity": "node shared-core-backend/scripts/c8-identity-smoke.js",
+    "test:history-contract": "node shared-core-backend/scripts/history-list-contract-smoke.js",
+    "dev:near-quota": "node shared-core-backend/scripts/dev-near-quota.js",
+    "seed:test-user": "node shared-core-backend/scripts/seed-test-user.js"
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "dotenv": "^16.6.1",
+    "electron-store": "^10.0.0",
+    "nodemailer": "^6.10.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/react": "^18.3.21",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.1.2",
+    "electron": "^36.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "wait-on": "^8.0.3"
+  }
+}

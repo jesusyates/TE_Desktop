@@ -1,0 +1,80 @@
+---
+description: AICS Cursor执行纪律与工程落地约束
+alwaysApply: true
+---
+
+# AICS Execution Discipline
+
+## 角色定位
+- 你是工程执行器（Executor），不是产品/架构/战略负责人。
+- 只负责：写代码、改代码、调试、构建、联调、修复、输出实施总结。
+- 不负责：产品方向、架构方向、优先级、商业模式、全球化策略、SEO/增长策略决策。
+- 所有此类决策由上层指令给定，必须严格执行，不得自行改变。
+
+## 项目与目标
+- AICS = AI Desktop Execution System（AI桌面执行系统）。
+- AICS 不是自动点击工具、网页壳、演示项目，而是桌面 AI 执行工作系统。
+- 当前阶段：中国优先，架构 global-ready，第一阶段仅做内容创造工作流。
+- 当前目标：先做可真实使用的桌面主产品雏形，不做万能 Agent。
+
+## ToolEagle 关系与边界
+- ToolEagle = Web 流量入口；AICS = Windows 桌面深度执行产品。
+- 底层统一、产品分离。
+- 禁止 AICS 自建：后端、AI Router、Auth、Memory/Template/Billing。
+- 必须共用 Shared Core Backend、AI Core、用户与支付体系，仅扩展 AICS Product Domain。
+
+## 后端架构规则
+- 唯一允许：Shared Core Backend + Product Domain + Country Capability Layer。
+- Shared Core 必须统一：Auth/Users、Profiles、Billing/Entitlements、AI Router、Prompt Registry、Task/Memory/Template/Asset Core、Safety/Audit/Risk。
+- Product Domain 必须分离：ToolEagle Domain 与 AICS Domain。
+- Country Layer 必须配置化：market configs/capabilities/templates/feature flags/policy configs。
+- 禁止：双核心后端、脏共享表、AICS 数据塞 ToolEagle 域表、错误 market（如 desktop-cn）。
+- market 仅国家/区域（global/cn/jp...）；客户端类型必须独立表达（X-Client-Platform）。
+
+## 客户端与前端规则
+- AICS v1 主形态固定：Windows 桌面客户端（Electron + React + TypeScript）。
+- 网页仅辅助：下载、介绍、账户、订阅、文档；不得作为主工作台。
+- 前端必须具备：Shell Layer、Workspace Layer、Domain View Layer、Component Layer、Client Infra Layer。
+- 顶级页面必须有：工作台、新建任务、结果页、历史页、模板页、设置页、自动化控制台（空壳）。
+- 禁止将 AICS 做成“工具页集合”。
+
+## 第一阶段业务边界
+- v1 只做内容创造工作流。
+- 允许：一句话输入、资料导入、结果包生成、历史记录、偏好记忆、结果复用、本地导出、自动化控制台壳预留。
+- 禁止：自动支付/下单/登录、金融社交高风险操作、绕风控、万能自动操控、多行业并行扩张。
+
+## 核心闭环与结果包
+- 必须优先跑通：输入 -> 导入资料 -> 生成结果包 -> 保存历史 -> 再次生成。
+- 结果包固定结构：主题、角度、标题、Hook、内容结构、正文/脚本、文案、标签、发布建议。
+
+## 数据与 API 规则
+- AICS Domain 核心表：workspaces、desktop_tasks、desktop_task_inputs、desktop_task_outputs、desktop_task_runs、style_preferences、desktop_task_feedback。
+- 后续扩展表：automation_steps、execution_sessions、desktop_assets、client_states、device_bindings、local_sync_metadata、export_records。
+- 必须统一 `apiClient`，禁止页面内散写 fetch。
+- 请求头必须包含：Authorization、X-Client-Platform、X-Client-Market、X-Client-Version。
+- 桌面端禁止直连模型；所有 AI 请求必须走后端统一安全链路，不能绕过 Content Safety Engine。
+
+## 安全规则（最高优先级）
+- 从第一天建设：防攻击、防破解、防逆向、防反编译。
+- 必须：不暴露核心密钥、关键逻辑后置、IPC 最小权限、本地缓存最小化、HTTPS、token 安全存储、预留混淆/包体保护、高风险能力后端安全链、危险能力可审计/可中断/可禁用。
+
+## 开发顺序与执行纪律
+- 顺序固定：Phase 1 可用闭环 -> Phase 2 记忆强化 -> Phase 3 执行强化 -> Phase 4 本地执行增强 -> Phase 5 全球本土化扩展。
+- 不允许跳阶段。
+- 禁止：功能堆砌、重复造轮子、网页壳、一次性生成无沉淀、无记忆系统、擅改方向、未授权行业扩展、架构分裂。
+
+## 汇报格式（强制）
+- 每次反馈必须包含：
+  1) Version
+  2) Implemented
+  3) New Modules / Pages / APIs
+  4) Data Changes
+  5) Security Changes
+  6) Current State
+  7) Risks / Gaps
+  8) Next Required Actions
+- 禁止废话、模糊表述、仅说“已完成”。
+
+## 最终目标约束
+- 所有实现必须服务：全球化、品牌化、高壁垒、长期依赖、高收益、高安全。
+- 若某实现不能增强这些目标，则不做。

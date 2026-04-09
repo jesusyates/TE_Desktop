@@ -1,0 +1,52 @@
+.tools-page__intro {
+  margin-bottom: 1.25rem;
+}
+
+.tools-page__grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.tools-page__card {
+  border: 1px solid var(--border-default,rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  background: var(--surface-elevated, rgba(255, 255, 255, 0.03));
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tools-page__card:hover {
+  border-color: var(--accent, #5b8cff);
+  box-shadow: 0 0 0 1px var(--accent, #5b8cff);
+}
+
+.tools-page__card[data-active="true"] {
+  border-color: var(--accent, #5b8cff);
+  box-shadow: 0 0 0 1px var(--accent, #5b8cff);
+}
+
+.tools-page__card-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.tools-page__card-desc {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+}
+
+.tools-page__panel {
+  margin-top: 1.5rem;
+}
+
+.tools-page__footnote {
+  margin-top: 2rem;
+  font-size: 0.8rem;
+}

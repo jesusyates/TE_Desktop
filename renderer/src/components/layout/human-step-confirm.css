@@ -1,0 +1,239 @@
+/* F-2B：能力执行模式顶栏（与普通生成任务区分） */
+.workbench-capability-banner {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(160, 120, 255, 0.42);
+  background: rgba(100, 70, 180, 0.14);
+}
+
+.workbench-capability-banner__badge {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  color: rgba(200, 180, 255, 0.95);
+}
+
+.workbench-capability-banner__headline {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.workbench-capability-banner__detail {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-muted, rgba(255, 255, 255, 0.76));
+}
+
+.workbench-capability-banner__meta {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-muted, rgba(255, 255, 255, 0.82));
+}
+
+.workbench-capability-banner__meta-k {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.75;
+  margin-bottom: 2px;
+}
+
+.workbench-capability-banner__actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.human-step-confirm {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.12));
+  background: var(--accent-muted, rgba(91, 140, 201, 0.12));
+}
+
+.human-step-confirm__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.human-step-confirm__message {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.72));
+}
+
+.human-step-confirm__hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.78rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.65));
+  line-height: 1.4;
+}
+
+.human-step-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.human-step-confirm__btn {
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.14));
+  background: var(--accent, var(--brand-primary));
+  color: var(--text-on-accent, #fff);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.human-step-confirm__btn:hover {
+  background: var(--accent-hover, var(--brand-primary-hover));
+}
+
+.human-step-confirm__btn--secondary {
+  background: transparent;
+  color: var(--text-primary, rgba(255, 255, 255, 0.9));
+  border-color: var(--border-default, rgba(255, 255, 255, 0.2));
+}
+
+.human-step-confirm__btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* D-6-1：安全拦截（非静默） */
+.safety-block-banner {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 100, 100, 0.5);
+  background: rgba(220, 60, 60, 0.12);
+}
+
+.safety-block-banner__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.safety-block-banner__body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.78));
+}
+
+/* D-6-2：权限平台拦截 */
+.permission-block-banner {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(180, 120, 255, 0.45);
+  background: rgba(140, 80, 220, 0.12);
+}
+
+.permission-block-banner__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.permission-block-banner__body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.78));
+}
+
+/* D-7-3Z：系统策略 / 预算 / 急停 / warn 轻提示 */
+.execution-soft-warn-strip {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 180, 255, 0.35);
+  background: rgba(80, 130, 220, 0.1);
+}
+
+.execution-soft-warn-strip__label {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted, rgba(255, 255, 255, 0.7));
+}
+
+.execution-soft-warn-strip__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.82));
+}
+
+.system-policy-banner {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 140, 80, 0.45);
+  background: rgba(200, 90, 40, 0.14);
+}
+
+.system-policy-banner__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.system-policy-banner__body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.78));
+}
+
+.execution-budget-banner {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 200, 80, 0.5);
+  background: rgba(180, 120, 0, 0.12);
+}
+
+.execution-budget-banner__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.execution-budget-banner__body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.78));
+}
+
+.emergency-stop-banner {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 90, 90, 0.55);
+  background: rgba(200, 50, 50, 0.14);
+}
+
+.emergency-stop-banner__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.emergency-stop-banner__body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.85));
+}

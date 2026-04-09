@@ -1,0 +1,273 @@
+/* D-5-2：Computer 执行壳 — 与内容生成区视觉区分 */
+
+.computer-execution-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 0;
+}
+
+.computer-execution-panel--footer-only {
+  padding: 0;
+  gap: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.computer-execution-panel__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  padding-top: 8px;
+  border-top: 1px solid rgba(34, 197, 94, 0.2);
+  margin-top: 4px;
+}
+
+.computer-execution-header {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  background: linear-gradient(145deg, rgba(22, 40, 28, 0.95) 0%, rgba(15, 24, 18, 0.98) 100%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.computer-execution-header__badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4ade80;
+  margin-bottom: 10px;
+}
+
+.computer-execution-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin-bottom: 10px;
+}
+
+.computer-execution-target__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.computer-execution-target__value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ecfdf5;
+}
+
+.computer-execution-target__value--app {
+  color: #86efac;
+}
+
+.computer-execution-target__sep {
+  opacity: 0.35;
+  user-select: none;
+}
+
+.computer-execution-header__summary {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.computer-execution-header__disclaimer {
+  margin: 0;
+}
+
+.computer-execution-status {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.computer-execution-status__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.computer-execution-status__row--secondary {
+  margin-bottom: 0;
+}
+
+.computer-execution-status__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.computer-execution-status__headline {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #bbf7d0;
+  letter-spacing: 0.02em;
+}
+
+.computer-execution-status__phase {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.computer-execution-status__hint {
+  margin: 10px 0 0;
+}
+
+.computer-execution-steps {
+  padding: 4px 2px;
+}
+
+.computer-execution-steps__title {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(167, 243, 208, 0.85);
+}
+
+.computer-execution-steps__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.computer-execution-step {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.computer-execution-step--running {
+  border-color: rgba(74, 222, 128, 0.45);
+  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.12);
+}
+
+.computer-execution-step--success {
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.computer-execution-step--failed {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.12);
+}
+
+.computer-execution-step--skipped {
+  opacity: 0.55;
+}
+
+.computer-execution-step__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.computer-execution-step__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.computer-execution-step__state {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(167, 243, 208, 0.9);
+}
+
+.computer-execution-step--pending .computer-execution-step__state {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.computer-execution-step--failed .computer-execution-step__state {
+  color: #fca5a5;
+}
+
+.computer-execution-step__desc {
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+
+.computer-execution-step__desc--error {
+  margin-top: 8px;
+  color: #fca5a5;
+}
+
+.computer-execution-step__progress {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.computer-execution-step__progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(74, 222, 128, 0.85);
+  transition: width 0.2s ease;
+}
+
+.computer-execution-logs {
+  padding: 8px 4px;
+}
+
+.computer-execution-logs__title {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(167, 243, 208, 0.75);
+}
+
+.computer-execution-logs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.computer-execution-logs__item {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.computer-execution-logs__time {
+  color: rgba(255, 255, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.computer-execution-logs__msg {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.computer-execution-shots {
+  padding: 4px 2px;
+}
