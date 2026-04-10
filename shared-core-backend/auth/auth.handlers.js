@@ -23,6 +23,13 @@ const authValidation = require("./auth.validation");
 const authMailer = require("./auth.mailer");
 const authResendCooldown = require("./auth.resend-cooldown");
 const { config } = require("../src/infra/config");
+const { isAuthProviderSupabase } = require("./auth-provider.util");
+
+function assertLegacyAuthHandlersAllowed() {
+  if (isAuthProviderSupabase()) {
+    throw new Error("LEGACY_AUTH_DISABLED_IN_SUPABASE_MODE");
+  }
+}
 
 const ACCESS_TTL_SEC = 15 * 60;
 const REFRESH_TTL_SEC = 7 * 24 * 60 * 60;
@@ -296,6 +303,7 @@ function handleAuthLogin(req, body) {
  * POST /auth/register — 与登录共用签发逻辑；新用户默认可用 global/en-US（或后续由偏好同步覆盖）。
  */
 async function handleAuthRegister(req, body) {
+  assertLegacyAuthHandlersAllowed();
   const meta = parseClientHeaders(req);
   if ("error" in meta) {
     authLog({
@@ -456,6 +464,7 @@ async function handleAuthRegister(req, body) {
 }
 
 function handleAuthVerifyEmail(req, body) {
+  assertLegacyAuthHandlersAllowed();
   const meta = parseClientHeaders(req);
   if ("error" in meta) {
     return {
@@ -522,6 +531,7 @@ function handleAuthVerifyEmail(req, body) {
 }
 
 async function handleAuthResendVerification(req, body) {
+  assertLegacyAuthHandlersAllowed();
   const meta = parseClientHeaders(req);
   if ("error" in meta) {
     return { status: 400, body: { success: false, message: "请求无效" } };
@@ -587,6 +597,7 @@ async function handleAuthResendVerification(req, body) {
  * Auth v1 Step 2：忘记密码 — 不暴露邮箱是否存在；已注册则邮件发送重置码。
  */
 async function handleAuthForgotPassword(req, body) {
+  assertLegacyAuthHandlersAllowed();
   const meta = parseClientHeaders(req);
   if ("error" in meta) {
     return { status: 400, body: { success: false, message: "请求无效" } };

@@ -1,7 +1,7 @@
 /**
  * Auth 发信：生产走 SMTP；开发可通过 AUTH_MAIL_SINK 使用 console/mock/none。
  * 生产环境禁止将验证码写入 console。
- * AUTH_PROVIDER=supabase 时由 Supabase Auth 发信，禁止走本模块验证码 sink。
+ * AUTH_PROVIDER=supabase 时由 Supabase Auth 发信；本模块禁止执行任何 sink / SMTP / 模板分支。
  */
 const templates = require("./auth.templates");
 const { isAuthProviderSupabase } = require("./auth-provider.util");
@@ -75,7 +75,7 @@ async function sendWithSmtp({ to, subject, text }) {
  */
 async function deliver({ to, locale, code, kind }) {
   if (isAuthProviderSupabase()) {
-    return { ok: false, error: "supabase_email_chain_only" };
+    throw new Error("MAILER_DISABLED_IN_SUPABASE_MODE");
   }
 
   const payload =

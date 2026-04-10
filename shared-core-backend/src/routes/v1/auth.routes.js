@@ -12,10 +12,12 @@ const legacy = require("../../../auth/auth.handlers");
 
 const supabase = require("../../../auth/supabase.handlers");
 
-
-
 function pickAuth() {
-  return isAuthProviderSupabase() ? supabase : legacy;
+  const handlers = isAuthProviderSupabase() ? supabase : legacy;
+  if (isAuthProviderSupabase() && handlers === legacy) {
+    throw new Error("LEGACY_AUTH_DISABLED_IN_SUPABASE_MODE");
+  }
+  return handlers;
 }
 
 

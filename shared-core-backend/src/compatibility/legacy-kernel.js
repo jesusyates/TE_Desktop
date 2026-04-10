@@ -40,7 +40,13 @@ const { readBearerFromReq, resolveSessionAsync } = require("../../auth/session.m
 
 function pickCompatAuthHandlers() {
   const { isAuthProviderSupabase } = require("../../auth/auth-provider.util");
-  return isAuthProviderSupabase() ? require("../../auth/supabase.handlers") : require("../../auth/auth.handlers");
+  const legacyH = require("../../auth/auth.handlers");
+  const supaH = require("../../auth/supabase.handlers");
+  const handlers = isAuthProviderSupabase() ? supaH : legacyH;
+  if (isAuthProviderSupabase() && handlers === legacyH) {
+    throw new Error("LEGACY_AUTH_DISABLED_IN_SUPABASE_MODE");
+  }
+  return handlers;
 }
 const { authLog } = require("../../auth/auth.log");
 const { parseClientHeaders } = require("../../auth/client-meta.util");
