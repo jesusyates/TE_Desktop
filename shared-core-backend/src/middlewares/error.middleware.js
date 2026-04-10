@@ -32,7 +32,21 @@ function errorMiddleware(err, req, res, _next) {
   }
 
   if (err && err.message === "Not allowed by CORS") {
-    logger.warn({ event: "cors_blocked", requestId, route: req.originalUrl, error: err.message });
+    const origin = req.headers && req.headers.origin;
+    logger.warn({
+      event: "cors_blocked",
+      requestId,
+      route: req.originalUrl,
+      method: req.method,
+      origin: origin || null,
+      error: err.message
+    });
+    /** 回显请求 Origin（含字符串 "null"），便于桌面端读到 403 JSON，而非 ERR_NETWORK */
+    if (typeof origin === "string" && origin.length > 0) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    }
     return res.status(403).json({
       success: false,
       code: "CORS_BLOCKED",

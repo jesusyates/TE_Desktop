@@ -4,6 +4,11 @@ import { CLIENT_VERSION } from "../config/clientVersion";
 import { clientSession } from "./clientSession";
 import { normalizeV1ResponseBody } from "./v1Envelope";
 import { logAxiosFailure } from "./apiErrorLog";
+import {
+  logAuthHttpRequest,
+  logAuthHttpResponseError,
+  logAuthHttpResponseSuccess
+} from "./authHttpDebug";
 
 const baseURL = SHARED_CORE_BASE_URL;
 
@@ -34,9 +39,18 @@ authApiClient.interceptors.request.use(async (config) => {
   return config;
 });
 
+authApiClient.interceptors.request.use((config) => {
+  logAuthHttpRequest(config);
+  return config;
+});
+
 authApiClient.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    logAuthHttpResponseSuccess(r);
+    return r;
+  },
   (err) => {
+    logAuthHttpResponseError(err);
     logAxiosFailure("auth", err);
     return Promise.reject(err);
   }

@@ -4,9 +4,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { registerAccountOnly } from "../services/authService";
 import { isRegisterUnverifiedExistingError } from "../services/authApi";
-import { formatLoginErrorMessage } from "../services/loginErrorMessage";
+import { formatLoginErrorWithDiagnostics } from "../services/loginErrorMessage";
 import { isValidEmailFormat, normalizeEmailInput } from "../modules/auth/authValidation";
-import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { getSharedCoreBaseUrlDebugInfo, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { setLastLoginEmail } from "../services/lastLoginEmail";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -36,9 +36,8 @@ export const RegisterPage = () => {
   }, [hydrate]);
 
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.debug("[auth] baseURL:", SHARED_CORE_BASE_URL);
-    }
+    // eslint-disable-next-line no-console -- 必须可见实际解析的 Shared Core 基址与构建注入变量
+    console.info("[auth-runtime] Shared Core 配置快照", getSharedCoreBaseUrlDebugInfo());
   }, []);
 
   useEffect(() => {
@@ -84,7 +83,7 @@ export const RegisterPage = () => {
           console.error("[register] failed", {
             baseURL: SHARED_CORE_BASE_URL,
             fullURL: ax && e.config?.baseURL ? `${e.config.baseURL}${e.config.url ?? ""}` : undefined,
-            path: "/auth/register",
+            path: "/v1/auth/register",
             axiosCode: ax ? e.code : undefined,
             httpStatus: ax ? e.response?.status : undefined,
             responseBody: ax ? e.response?.data : undefined,
@@ -93,7 +92,7 @@ export const RegisterPage = () => {
           });
         }
         setErr(
-          formatLoginErrorMessage(e, {
+          formatLoginErrorWithDiagnostics(e, {
             errorGeneric: u.login.error,
             errorInvalidCredentials: u.login.errorInvalidCredentials,
             errorInvalidEmailFormat: u.login.errorInvalidEmailFormat,
@@ -187,9 +186,12 @@ export const RegisterPage = () => {
                   </Button>
                 </form>
                 {err ? (
-                  <p className="text-danger text-sm mt-2 mb-0" role="alert">
+                  <pre
+                    className="text-danger text-sm mt-2 mb-0 whitespace-pre-wrap break-words font-sans"
+                    role="alert"
+                  >
                     {err}
-                  </p>
+                  </pre>
                 ) : null}
                 <div className="auth-auth-links">
                   <Link to="/login">{r.linkLogin}</Link>

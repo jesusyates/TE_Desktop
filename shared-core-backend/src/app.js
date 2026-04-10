@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const { config } = require("./infra/config");
+const { corsDynamicCallback } = require("./middlewares/cors-origin.util");
 const { securityHeadersMiddleware } = require("./middlewares/security-headers.middleware");
 const { unifiedContextMiddleware } = require("./middlewares/request-context.middleware");
 const { requestLoggingMiddleware } = require("./middlewares/request-logging.middleware");
@@ -23,37 +24,41 @@ function createApp() {
   app.disable("x-powered-by");
 
   app.use(securityHeadersMiddleware);
-  app.use(
-    cors({
-      origin(origin, callback) {
-        if (!origin) {
-          callback(null, true);
-          return;
-        }
-        if (c.allowedOrigins.includes(origin)) {
-          callback(null, true);
-          return;
-        }
-        callback(new Error("Not allowed by CORS"));
-      },
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: [
-        "Content-Type",
-        "Authorization",
-        "X-Client-Platform",
-        "X-Client-Market",
-        "X-Client-Locale",
-        "X-Client-Version",
-        "X-Client-Product",
-        "X-Client-Id",
-        "X-Product",
-        "X-Client-Preference-Market",
-        "X-Client-Preference-Locale"
-      ],
-      exposedHeaders: ["X-Session-Refresh-Recommended", "Deprecation", "Link", "X-API-Compat-Deprecated"],
-      credentials: false
-    })
-  );
+  const corsOptions = {
+    origin(origin, callback) {
+      corsDynamicCallback(c, origin, callback);
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Accept",
+      "Authorization",
+      "X-Requested-With",
+      "X-Client-Platform",
+      "X-Client-Market",
+      "X-Client-Locale",
+      "X-Client-Version",
+      "X-Client-Product",
+      "X-Client-Id",
+      "X-Product",
+      "X-Client-Preference-Market",
+      "X-Client-Preference-Locale",
+      "Access-Control-Request-Method",
+      "Access-Control-Request-Headers"
+    ],
+    exposedHeaders: ["X-Session-Refresh-Recommended", "Deprecation", "Link", "X-API-Compat-Deprecated"],
+    credentials: false,
+    optionsSuccessStatus: 204,
+    maxAge: 86400
+  };
+  app.use(cors(corsOptions));
+  /** Chrome PNA 预检：公网页访问局域网资源时；无害且避免部分环境预检失败 */
+  app.use((req, res, next) => {
+    if (String(req.headers["access-control-request-private-network"] || "").toLowerCase() === "true") {
+      res.setHeader("Access-Control-Allow-Private-Network", "true");
+    }
+    next();
+  });
   app.use(express.json({ limit: c.jsonBodyLimit }));
   app.use(express.urlencoded({ extended: true, limit: c.urlEncodedBodyLimit }));
   app.use(unifiedContextMiddleware);

@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_SHARED_CORE_BASE_URL?: string;
   /** D-7-5A：AI 网关基址 */
   readonly VITE_AI_GATEWAY_BASE_URL?: string;
+  /** local | development | dev → 127.0.0.1:4000；缺省按 remote 解析 */
+  readonly VITE_AICS_BACKEND_PROFILE?: string;
 }
 
 interface ImportMeta {

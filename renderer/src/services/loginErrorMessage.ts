@@ -4,6 +4,7 @@
 
 import { isAxiosError } from "axios";
 import { toUserFacingErrorMessage } from "./userFacingErrorMessage";
+import { formatAuthFailureDiagnostics } from "./authHttpDebug";
 
 export type LoginErrorUiStrings = {
   errorGeneric: string;
@@ -98,6 +99,16 @@ export function formatLoginErrorMessage(e: unknown, u: LoginErrorUiStrings): str
     return toUserFacingErrorMessage(e.message);
   }
   return toUserFacingErrorMessage(u.errorGeneric);
+}
+
+/**
+ * 登录/注册：保留可读文案，并附加 HTTP/网络诊断块（便于区分地址错误、4xx/5xx、断网、CORS）。
+ */
+export function formatLoginErrorWithDiagnostics(e: unknown, u: LoginErrorUiStrings): string {
+  const friendly = formatLoginErrorMessage(e, u);
+  if (hasAuthCode(e, "EMAIL_NOT_VERIFIED")) return friendly;
+  const diag = formatAuthFailureDiagnostics(e);
+  return `${friendly}\n\n—— 诊断 ——\n${diag}`;
 }
 
 /** 验证 / 重发验证码：将后端中文 message 映射为当前语言的产品文案，其余走登录错误归一化。 */

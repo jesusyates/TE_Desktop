@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { loginWithEmailPassword } from "../services/authService";
-import { formatLoginErrorMessage, hasAuthCode } from "../services/loginErrorMessage";
+import { formatLoginErrorWithDiagnostics, hasAuthCode } from "../services/loginErrorMessage";
 import { isValidEmailFormat, normalizeEmailInput } from "../modules/auth/authValidation";
-import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { getSharedCoreBaseUrlDebugInfo, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { getLastLoginEmail, setLastLoginEmail } from "../services/lastLoginEmail";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -38,9 +38,8 @@ export const LoginPage = () => {
   }, [accessToken, userId, navigate]);
 
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.debug("[auth] baseURL:", SHARED_CORE_BASE_URL);
-    }
+    // eslint-disable-next-line no-console -- 必须可见实际解析的 Shared Core 基址与构建注入变量
+    console.info("[auth-runtime] Shared Core 配置快照", getSharedCoreBaseUrlDebugInfo());
   }, []);
 
   useEffect(() => {
@@ -80,7 +79,7 @@ export const LoginPage = () => {
         }
         setEmailNotVerifiedGate(false);
         setErr(
-          formatLoginErrorMessage(e, {
+          formatLoginErrorWithDiagnostics(e, {
             errorGeneric: u.login.error,
             errorInvalidCredentials: u.login.errorInvalidCredentials,
             errorInvalidEmailFormat: u.login.errorInvalidEmailFormat,
@@ -193,9 +192,12 @@ export const LoginPage = () => {
                     ) : null}
                   </div>
                 ) : err ? (
-                  <p className="text-danger text-sm mt-2 mb-0" role="alert">
+                  <pre
+                    className="text-danger text-sm mt-2 mb-0 whitespace-pre-wrap break-words font-sans"
+                    role="alert"
+                  >
                     {err}
-                  </p>
+                  </pre>
                 ) : null}
                 <div className="auth-auth-links">
                   <span className="text-muted">{u.login.noAccount}</span>{" "}

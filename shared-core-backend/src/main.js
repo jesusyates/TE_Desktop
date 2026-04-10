@@ -19,6 +19,32 @@ initDomainStores(c);
 const { createApp } = require("./app");
 const { logger } = require("./infra/logger");
 
+process.on("unhandledRejection", (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : null;
+  const payload = {
+    event: "unhandled_rejection",
+    requestId: null,
+    route: null,
+    error: msg,
+    stack: stack ? String(stack).slice(0, 4000) : null
+  };
+  logger.error(payload);
+  console.error("[shared-core-backend] unhandledRejection", msg, stack || "");
+});
+
+process.on("uncaughtException", (err) => {
+  const payload = {
+    event: "uncaught_exception",
+    requestId: null,
+    route: null,
+    error: err && err.message ? err.message : String(err),
+    stack: err && err.stack ? String(err.stack).slice(0, 4000) : null
+  };
+  logger.error(payload);
+  console.error("[shared-core-backend] uncaughtException", payload.error, payload.stack || "");
+});
+
 const { initStorage } = require("../storage/db");
 const { runMigrations } = require("../storage/migrate");
 const { runConsistencyCheck } = require("../storage/consistency");

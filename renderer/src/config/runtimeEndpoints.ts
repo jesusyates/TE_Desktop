@@ -36,6 +36,23 @@ export const AI_GATEWAY_BASE_URL =
   normalizeBaseUrl(import.meta.env.VITE_AI_GATEWAY_BASE_URL) ?? DEFAULT_AI_GATEWAY_BASE_URL;
 
 /**
+ * 登录/注册排障：打印当前打包进 renderer 的基址解析来源（非猜测）。
+ * - 显式 `VITE_SHARED_CORE_BASE_URL` 在 vite 构建时由 `process.env` 写入 `import.meta.env`（见 vite.config `define`）。
+ * - 未显式时由 `VITE_AICS_BACKEND_PROFILE` 决定 local(127.0.0.1:4000) 或 remote(43.160.229.50:4000)。
+ */
+export function getSharedCoreBaseUrlDebugInfo(): Record<string, unknown> {
+  return {
+    SHARED_CORE_BASE_URL,
+    VITE_SHARED_CORE_BASE_URL: import.meta.env.VITE_SHARED_CORE_BASE_URL ?? "",
+    VITE_AI_GATEWAY_BASE_URL: import.meta.env.VITE_AI_GATEWAY_BASE_URL ?? "",
+    VITE_AICS_BACKEND_PROFILE: import.meta.env.VITE_AICS_BACKEND_PROFILE ?? "",
+    viteMode: import.meta.env.MODE,
+    viteDev: import.meta.env.DEV,
+    viteProd: import.meta.env.PROD
+  };
+}
+
+/**
  * Auth：邮箱重发验证码。默认开启（Shared Core 已接 POST /v1/auth/resend-verification）。
  * 若某环境未部署该接口，可设 `VITE_AUTH_VERIFICATION_RESEND_ENABLED=0` 禁用按钮。
  */

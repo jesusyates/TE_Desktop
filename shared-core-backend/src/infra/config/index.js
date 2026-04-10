@@ -3,6 +3,7 @@
  */
 const path = require("path");
 const { backendRoot } = require("./bootstrap-env");
+const { parseAllowedOrigins } = require("../middlewares/cors-origin.util");
 
 function readEnv(key, defaultValue) {
   const v = process.env[key];
@@ -15,16 +16,6 @@ function readInt(key, defaultValue) {
   if (v == null) return defaultValue;
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : defaultValue;
-}
-
-function parseAllowedOrigins(raw) {
-  if (!raw || String(raw).trim() === "") {
-    return ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"];
-  }
-  return String(raw)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 function resolveStorageMode() {
@@ -74,6 +65,9 @@ function getConfig() {
 
     allowedOrigins: parseAllowedOrigins(readEnv("ALLOWED_ORIGINS", "")),
 
+    /** 为 "1" 时 CORS 仅信任 ALLOWED_ORIGINS，不自动放行 Electron/null/localhost（桌面联调勿开） */
+    corsStrict: readEnv("CORS_STRICT", "0") === "1",
+
     defaultMarket: readEnv("DEFAULT_MARKET", "global"),
     defaultLocale: readEnv("DEFAULT_LOCALE", "en-US"),
     defaultProduct: readEnv("DEFAULT_CLIENT_PRODUCT", ""),
@@ -100,4 +94,4 @@ function config() {
   return _cached;
 }
 
-module.exports = { config, getConfig, readEnv };
+module.exports = { config, getConfig, readEnv, parseAllowedOrigins };
