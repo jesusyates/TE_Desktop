@@ -1,8 +1,10 @@
 /**
  * Auth 发信：生产走 SMTP；开发可通过 AUTH_MAIL_SINK 使用 console/mock/none。
  * 生产环境禁止将验证码写入 console。
+ * AUTH_PROVIDER=supabase 时由 Supabase Auth 发信，禁止走本模块验证码 sink。
  */
 const templates = require("./auth.templates");
+const { isAuthProviderSupabase } = require("./auth-provider.util");
 
 function isProd() {
   return String(process.env.NODE_ENV || "").toLowerCase() === "production";
@@ -72,6 +74,10 @@ async function sendWithSmtp({ to, subject, text }) {
  * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
  */
 async function deliver({ to, locale, code, kind }) {
+  if (isAuthProviderSupabase()) {
+    return { ok: false, error: "supabase_email_chain_only" };
+  }
+
   const payload =
     kind === "verify"
       ? templates.verificationEmail(locale, to, code)

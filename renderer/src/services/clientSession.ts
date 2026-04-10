@@ -48,10 +48,10 @@ export const clientSession = {
   },
 
   async getMarket(): Promise<string> {
-    return (await getAuthState()).market || "global";
+    return (await getAuthState()).market || "cn";
   },
 
   async getLocale(): Promise<string> {
-    return (await getAuthState()).locale || "en-US";
+    return (await getAuthState()).locale || "zh-CN";
   }
 };

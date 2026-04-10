@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
-import { resendVerificationEmail, verifyEmailAndSignIn } from "../services/authService";
+import { resendVerificationEmail, verifyEmailAndSignIn, verifyEmailFromLinkToken } from "../services/authService";
 import { formatVerifyEmailErrorMessage, getResendCooldownSecondsFromError } from "../services/loginErrorMessage";
 import { AUTH_RESEND_COOLDOWN_SECONDS, AUTH_VERIFICATION_RESEND_ENABLED, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { setLastLoginEmail } from "../services/lastLoginEmail";
@@ -116,6 +116,33 @@ export const VerifyEmailPage = () => {
     emailRequired: v.emailRequired,
     codeRequired: v.codeRequired
   };
+
+  const linkTokenConsumedRef = useRef(false);
+  useEffect(() => {
+    if (linkTokenConsumedRef.current) return;
+    const th = searchParams.get("token_hash")?.trim() || searchParams.get("token")?.trim();
+    const typRaw = searchParams.get("type")?.trim();
+    const typ = typRaw && typRaw.length > 0 ? typRaw : undefined;
+    if (!th || th.length < 8) return;
+    linkTokenConsumedRef.current = true;
+    setBusy(true);
+    setErr("");
+    void verifyEmailFromLinkToken(th, typ)
+      .then(() => {
+        if (emailInitial) setLastLoginEmail(emailInitial);
+        return hydrate();
+      })
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message.trim() : "";
+        if (/请使用密码登录|邮箱已验证/.test(msg)) {
+         navigate("/login?emailVerified=1", { replace: true });
+          return;
+        }
+        setErr(formatVerifyEmailErrorMessage(e, errStrings));
+      })
+      .finally(() => setBusy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot magic link; errStrings stable per locale
+  }, [searchParams, emailInitial, navigate, hydrate, v, u]);
 
   const runVerify = () => {
     if (busy) return;

@@ -1,10 +1,11 @@
 /**
- * C-2 / C-5 / C-6 — product/client_platform 仅来自 Header（非 user_id/market/locale 权威）；identity 仅由 Shared Core 裁定。
- * 优先级：用户手动选择 > 账号偏好 > 本地缓存 > IP/地区 > global/en-US；market 与 locale 解耦。
- * session_version 落后于服务端时：不改 401，仍用最新 preference 写 session，并置 req.sessionRefreshRecommended。
- * 禁止：preference 更新后业务仍长期吃旧 JWT 上下文；客户端自判 session 过期；refresh 风暴。
+ * C-2 / C-5 / C-6 — product/_client_platform 仅来自 Header；identity 由 Shared Core 裁定。
+ * AUTH_PROVIDER=supabase 时：Bearer 为 GoTrue access JWT，须经 Supabase auth.getUser 校验（异步）。
  */
 const { verifyAccessToken } = require("./auth.handlers");
+const { config } = require("../src/infra/config");
+const { getSupabaseAdminClient } = require("../src/infra/supabase/client");
+const { getProfileByUserId } = require("../src/services/v1/profiles.service");
 const { parseClientHeaders, pickHeader } = require("./client-meta.util");
 const preferencesService = require("../preferences/preferences.service");
 const preferencesSync = require("../preferences/preferences-sync.service");
@@ -99,8 +100,53 @@ function resolveSession(req) {
   return null;
 }
 
+/**
+ * @returns {Promise<typeof req.session | null>}
+ */
+async function resolveSessionAsync(req) {
+  const c = config();
+  if (c.authProvider !== "supabase") {
+    return resolveSession(req);
+  }
+  const meta = parseClientHeaders(req);
+  if ("error" in meta) return null;
+
+  const authHeader = pickHeader(req, "authorization");
+  const token = readBearer(authHeader);
+  if (!token) {
+    if (process.env.SHARED_CORE_HEADER_IDENTITY_FALLBACK === "1") {
+      return resolveSession(req);
+    }
+    return null;
+  }
+
+  const admin = getSupabaseAdminClient();
+  if (!admin) return null;
+
+  const { data, error } = await admin.auth.getUser(token);
+  if (error || !data?.user) return null;
+
+  const uid = data.user.id;
+  const profile = await getProfileByUserId(uid);
+  const marketRaw = profile?.market || data.user.user_metadata?.market || "global";
+  const localeRaw = profile?.locale || data.user.user_metadata?.locale || "en";
+
+  const eff = preferencesService.resolveForSession(uid, marketRaw, localeRaw, req.headers);
+
+  req.sessionRefreshRecommended = false;
+
+  req.session = {
+    user_id: uid,
+    market: eff.market,
+    locale: eff.locale,
+    product: meta.product,
+    client_platform: meta.client_platform
+  };
+  return req.session;
+}
+
 function readBearerFromReq(req) {
   return readBearer(pickHeader(req, "authorization"));
 }
 
-module.exports = { resolveSession, readBearer, readBearerFromReq, pickHeader };
+module.exports = { resolveSession, resolveSessionAsync, readBearer, readBearerFromReq, pickHeader };

@@ -1,9 +1,6 @@
 const { randomUUID } = require("crypto");
 const { TaskStore } = require("../task-store.base");
-const {
-  normalizeTaskForCreate,
-  normalizeTaskRow
-} = require("../../schemas/domain-stores.schema");
+const { normalizeTaskForCreate, normalizeTaskRow } = require("../../schemas/domain-stores.schema");
 
 class MemoryTaskStore extends TaskStore {
   constructor() {
@@ -12,11 +9,33 @@ class MemoryTaskStore extends TaskStore {
     this._rows = new Map();
   }
 
+  _toRow(norm, id) {
+    return {
+      id,
+      userId: norm.user_id,
+      title: norm.title,
+      status: norm.status,
+      payload: norm.payload,
+      createdAt: norm.created_at,
+      updatedAt: norm.updated_at
+    };
+  }
+
   async list(ctx, _query) {
     const uid = ctx && ctx.userId;
     return Array.from(this._rows.values())
       .filter((t) => !uid || t.userId === uid)
-      .map((t) => normalizeTaskRow({ ...t, user_id: t.userId }));
+      .map((t) =>
+        normalizeTaskRow({
+          id: t.id,
+          user_id: t.userId,
+          title: t.title,
+          status: t.status,
+          payload: t.payload,
+          created_at: t.createdAt,
+          updated_at: t.updatedAt
+        })
+      );
   }
 
   async getById(ctx, id) {
@@ -24,23 +43,64 @@ class MemoryTaskStore extends TaskStore {
     if (!row) return null;
     const uid = ctx && ctx.userId;
     if (uid && row.userId !== uid) return null;
-    return normalizeTaskRow({ ...row, user_id: row.userId });
+    return normalizeTaskRow({
+      id: row.id,
+      user_id: row.userId,
+      title: row.title,
+      status: row.status,
+      payload: row.payload,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt
+    });
   }
 
   async create(ctx, payload) {
     const norm = normalizeTaskForCreate(ctx, payload);
     const id = payload && payload.id ? String(payload.id) : `tsk_${randomUUID()}`;
-    const row = {
-      id,
-      userId: norm.user_id,
-      title: norm.title,
-      status: norm.status,
-      ...norm.payload,
-      createdAt: norm.created_at,
-      updatedAt: norm.updated_at
-    };
+    const row = this._toRow(norm, id);
     this._rows.set(id, row);
-    return normalizeTaskRow({ id, user_id: row.userId, title: row.title, status: row.status, payload: norm.payload, created_at: row.createdAt, updated_at: row.updatedAt });
+    return normalizeTaskRow({
+      id,
+      user_id: row.userId,
+      title: row.title,
+      status: row.status,
+      payload: row.payload,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt
+    });
+  }
+
+  async update(ctx, id, merged) {
+    const row = this._rows.get(id);
+    if (!row) return null;
+    const uid = ctx && ctx.userId;
+    if (uid && row.userId !== uid) return null;
+    const next = {
+      ...row,
+      title: merged.title,
+      status: merged.status,
+      payload: merged.payload,
+      updatedAt: merged.updated_at
+    };
+    this._rows.set(id, next);
+    return normalizeTaskRow({
+      id: next.id,
+      user_id: next.userId,
+      title: next.title,
+      status: next.status,
+      payload: next.payload,
+      created_at: next.createdAt,
+      updated_at: next.updatedAt
+    });
+  }
+
+  async delete(ctx, id) {
+    const row = this._rows.get(id);
+    if (!row) return false;
+    const uid = ctx && ctx.userId;
+    if (uid && row.userId !== uid) return false;
+    this._rows.delete(id);
+    return true;
   }
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { resetPasswordWithCode } from "../services/authService";
+import { resetPasswordFromMailToken, resetPasswordWithCode } from "../services/authService";
 import { formatResetPasswordErrorMessage } from "../services/loginErrorMessage";
 import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { Button } from "../components/ui/Button";
@@ -18,6 +18,9 @@ export const ResetPasswordPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const emailInitial = searchParams.get("email")?.trim() ?? "";
+  const recoveryToken =
+    searchParams.get("token_hash")?.trim() || searchParams.get("token")?.trim() || "";
+  const isRecoveryLink = recoveryToken.length >= 8;
   const [email, setEmail] = useState(emailInitial);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -60,6 +63,29 @@ export const ResetPasswordPage = () => {
   const submit = () => {
     if (busy) return;
     setErr("");
+    if (password.length < MIN_PASSWORD) {
+      setErr(rp.errorPasswordShort);
+      return;
+    }
+    if (password !== password2) {
+      setErr(rp.errorPasswordMismatch);
+      return;
+    }
+    if (isRecoveryLink) {
+      setBusy(true);
+      void resetPasswordFromMailToken(recoveryToken, password)
+        .then((autoIn) => {
+          navigate(autoIn ? "/workbench" : "/login?passwordReset=1", { replace: true });
+        })
+        .catch((e: unknown) => {
+          if (import.meta.env.DEV) {
+            console.error("[reset-password] failed", { baseURL: SHARED_CORE_BASE_URL, err: e });
+          }
+          setErr(formatResetPasswordErrorMessage(e, errStrings));
+        })
+        .finally(() => setBusy(false));
+      return;
+    }
     const em = normalizeEmailInput(email);
     if (!em) {
       setErr(rp.emailRequired);
@@ -73,18 +99,10 @@ export const ResetPasswordPage = () => {
       setErr(rp.codeRequired);
       return;
     }
-    if (password.length < MIN_PASSWORD) {
-      setErr(rp.errorPasswordShort);
-      return;
-    }
-    if (password !== password2) {
-      setErr(rp.errorPasswordMismatch);
-      return;
-    }
     setBusy(true);
     void resetPasswordWithCode(em, code.trim(), password)
-      .then(() => {
-        navigate("/login?passwordReset=1", { replace: true });
+      .then((autoIn) => {
+        navigate(autoIn ? "/workbench" : "/login?passwordReset=1", { replace: true });
       })
       .catch((e: unknown) => {
         if (import.meta.env.DEV) {
@@ -118,34 +136,42 @@ export const ResetPasswordPage = () => {
                     submit();
                   }}
                 >
-                  <div className="form-field">
-                    <label className="form-label" htmlFor="rp-email">
-                      {rp.emailLabel}
-                    </label>
-                    <Input
-                      id="rp-email"
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder={u.login.phEmail}
-                      disabled={Boolean(emailInitial)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label className="form-label" htmlFor="rp-code">
-                      {rp.codeLabel}
-                    </label>
-                    <Input
-                      id="rp-code"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                      value={code}
-                      onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder={rp.codePlaceholder}
-                    />
-                  </div>
+                  {isRecoveryLink ? (
+                    <p className="text-muted text-sm mt-0 mb-3" role="status">
+                      {rp.recoveryLinkHint}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="form-field">
+                        <label className="form-label" htmlFor="rp-email">
+                          {rp.emailLabel}
+                        </label>
+                        <Input
+                          id="rp-email"
+                          type="email"
+                          autoComplete="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder={u.login.phEmail}
+                          disabled={Boolean(emailInitial)}
+                        />
+                      </div>
+                      <div className="form-field">
+                        <label className="form-label" htmlFor="rp-code">
+                          {rp.codeLabel}
+                        </label>
+                        <Input
+                          id="rp-code"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          value={code}
+                          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          placeholder={rp.codePlaceholder}
+                        />
+                      </div>
+                    </>
+                  )}
                   <div className="form-field">
                     <label className="form-label" htmlFor="rp-pass">
                       {rp.newPassword}

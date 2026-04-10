@@ -52,7 +52,7 @@ function snapshotFromLocalCache(taskId: string): ExecutionEventStreamSnapshot | 
 }
 
 /**
- * D-2-4B：只读轮询 GET /aics/execution/tasks/:taskId，用于验证后端数据流。
+ * D-2-4B：只读轮询 GET /v1/tasks/:taskId（经 fetchTaskSnapshot）。
  * 不接管 UI；成功时 console.log，失败 console.warn + 指数退避。
  */
 export function useExecutionEventStream(taskId: string): ExecutionEventStreamSnapshot {

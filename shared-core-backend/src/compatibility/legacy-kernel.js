@@ -36,18 +36,12 @@ const { randomUUID } = require("crypto");
 const { URL } = require("url");
 const { generateStepResult } = require("../../generateExecutionResult");
 
-const {
-  handleAuthLogin,
-  handleAuthRegister,
-  handleAuthVerifyEmail,
-  handleAuthResendVerification,
-  handleAuthForgotPassword,
-  handleAuthResetPassword,
-  handleAuthRefresh,
-  handleAuthMe,
-  handleAuthLogout
-} = require("../../auth/auth.handlers");
-const { resolveSession, readBearerFromReq } = require("../../auth/session.middleware");
+const { readBearerFromReq, resolveSessionAsync } = require("../../auth/session.middleware");
+
+function pickCompatAuthHandlers() {
+  const { isAuthProviderSupabase } = require("../../auth/auth-provider.util");
+  return isAuthProviderSupabase() ? require("../../auth/supabase.handlers") : require("../../auth/auth.handlers");
+}
 const { authLog } = require("../../auth/auth.log");
 const { parseClientHeaders } = require("../../auth/client-meta.util");
 const { requireEntitlementOr402 } = require("../../billing/billing.middleware");
@@ -87,8 +81,8 @@ const parseHistoryResourceId = (pathname) => {
 };
 
 /** Shared Core：受保护路由必须携带合法 Bearer + 标准 Client Header，并写入 req.session。 */
-const requireSessionOr401 = (req, res) => {
-  if (!resolveSession(req)) {
+const requireSessionOr401 = async (req, res) => {
+  if (!(await resolveSessionAsync(req))) {
     const meta = parseClientHeaders(req);
     authLog({
       event: "auth_401",
@@ -150,8 +144,8 @@ function getJsonBody(req) {
 
 const now = () => new Date().toISOString();
 
-function requireAuthContext(req, res) {
-  if (!requireSessionOr401(req, res)) return false;
+async function requireAuthContext(req, res) {
+  if (!(await requireSessionOr401(req, res))) return false;
   return buildRequestContext(req, res, send);
 }
 
@@ -434,6 +428,7 @@ async function legacyKernelHandler(req, res) {
   const pathname = parsed.pathname;
 
   try {
+    const _auth = pickCompatAuthHandlers();
 
     /** AICS 桌面：更新检查（无 Bearer；策略由服务端返回 updateType） */
     if (method === "GET" && pathname === "/aics/desktop/update-check") {
@@ -443,59 +438,59 @@ async function legacyKernelHandler(req, res) {
 
     if (method === "POST" && pathname === "/auth/login") {
       const body = getJsonBody(req);
-      const r = handleAuthLogin(req, body);
+      const r = await Promise.resolve(_auth.handleAuthLogin(req, body));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/auth/register") {
       const body = getJsonBody(req);
-      const r = await handleAuthRegister(req, body);
+      const r = await Promise.resolve(_auth.handleAuthRegister(req, body));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/auth/verify-email") {
       const body = getJsonBody(req);
-      const r = handleAuthVerifyEmail(req, body);
+      const r = await Promise.resolve(_auth.handleAuthVerifyEmail(req, body));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/auth/resend-verification") {
       const body = getJsonBody(req);
-      const r = await handleAuthResendVerification(req, body);
+      const r = await Promise.resolve(_auth.handleAuthResendVerification(req, body));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/auth/forgot-password") {
       const body = getJsonBody(req);
-      const r = await handleAuthForgotPassword(req, body);
+      const r = await Promise.resolve(_auth.handleAuthForgotPassword(req, body));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/auth/reset-password") {
       const body = getJsonBody(req);
-      const r = handleAuthResetPassword(req, body);
+      const r = await Promise.resolve(_auth.handleAuthResetPassword(req, body));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/auth/refresh") {
       const body = getJsonBody(req);
-      const r = handleAuthRefresh(req, body);
+      const r = await Promise.resolve(_auth.handleAuthRefresh(req, body));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "GET" && pathname === "/auth/me") {
-      const r = handleAuthMe(req, readBearerFromReq(req));
+      const r = await Promise.resolve(_auth.handleAuthMe(req, readBearerFromReq(req)));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/auth/logout") {
       const body = getJsonBody(req);
-      const r = handleAuthLogout(req, body);
+      const r = await Promise.resolve(_auth.handleAuthLogout(req, body));
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/api/tasks") {
-      if (!requireSessionOr401(req, res)) return;
+      if (!(await requireSessionOr401(req, res))) return;
       const body = getJsonBody(req);
       const built = buildTaskFromInput(body);
       req.taskIdForUsage = built.id;
@@ -614,7 +609,7 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "GET" && pathname === "/billing/entitlement") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const ent = entitlementService.getEntitlement(req.context.userId, req.context.product);
       return send(req, res, 200, {
         user_id: ent.user_id,
@@ -629,13 +624,13 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "GET" && pathname === "/preferences/me") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const r = handleGetPreferencesMe(req);
       return send(req, res, r.status, r.body);
     }
 
     if (method === "PUT" && pathname === "/preferences/me") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const body = getJsonBody(req);
       const r = handlePutPreferencesMe(req, body);
       if (r.status === 200) {
@@ -646,20 +641,20 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "GET" && pathname === "/history/list") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const r = handleGetHistoryList(req, parsed.searchParams);
       return send(req, res, r.status, r.body);
     }
 
     const historyResourceId = parseHistoryResourceId(pathname);
     if (method === "GET" && historyResourceId) {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const r = handleGetHistoryOne(req, historyResourceId);
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/history/list") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const body = getJsonBody(req);
       const sp = new URLSearchParams();
       sp.set("page", String(body && body.page != null ? body.page : 1));
@@ -670,20 +665,20 @@ async function legacyKernelHandler(req, res) {
 
     const historyDeleteId = method === "DELETE" ? historyResourceId : null;
     if (historyDeleteId) {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const r = handleDeleteHistory(req, historyDeleteId);
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/history") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const body = getJsonBody(req);
       const r = handlePostHistory(req, body);
       return send(req, res, r.status, r.body);
     }
 
     if (method === "POST" && pathname === "/aics/tool-requests") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       if (!assertRequestContext(req, { requireEntitlement: false })) {
         return send(req, res, 500, { message: "context_assert_fail" });
       }
@@ -693,7 +688,7 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "GET" && pathname === "/aics/tool-requests") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       if (!assertRequestContext(req, { requireEntitlement: false })) {
         return send(req, res, 500, { message: "context_assert_fail" });
       }
@@ -702,7 +697,7 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "GET" && pathname === "/aics/capability-catalog") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       if (!assertRequestContext(req, { requireEntitlement: false })) {
         return send(req, res, 500, { message: "context_assert_fail" });
       }
@@ -717,7 +712,7 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "POST" && pathname === "/aics/capabilities:infer") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       if (!assertRequestContext(req, { requireEntitlement: false })) {
         return send(req, res, 500, { message: "context_assert_fail" });
       }
@@ -729,7 +724,7 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "POST" && pathname === "/aics/capabilities:resolve") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       if (!assertRequestContext(req, { requireEntitlement: false })) {
         return send(req, res, 500, { message: "context_assert_fail" });
       }
@@ -741,7 +736,7 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "POST" && pathname === "/planner/tasks:plan") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       if (!assertRequestContext(req, { requireEntitlement: false })) {
         return send(req, res, 500, { message: "context_assert_fail" });
       }
@@ -773,7 +768,7 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "POST" && pathname === "/aics/execution/tasks") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const body = getJsonBody(req);
       const taskId = body.taskId || randomUUID();
       const task = {
@@ -797,7 +792,7 @@ async function legacyKernelHandler(req, res) {
 
     const taskIdForPatch = parseTaskId(pathname);
     if (method === "PATCH" && taskIdForPatch) {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const task = db.tasks.get(taskIdForPatch);
       if (!task) return send(req, res, 404, { message: "task not found" });
       const prevStatus = task.status;
@@ -817,7 +812,7 @@ async function legacyKernelHandler(req, res) {
 
     const stepPath = parseStepPath(pathname);
     if (method === "PUT" && stepPath) {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const { taskId, stepId } = stepPath;
       if (!db.tasks.has(taskId)) return send(req, res, 404, { message: "task not found" });
       const body = getJsonBody(req);
@@ -845,7 +840,7 @@ async function legacyKernelHandler(req, res) {
 
     const taskIdForLogs = parseLogsPath(pathname);
     if (method === "POST" && taskIdForLogs) {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       if (!db.tasks.has(taskIdForLogs)) return send(req, res, 404, { message: "task not found" });
       const body = getJsonBody(req);
       const logs = db.logsByTask.get(taskIdForLogs) || [];
@@ -868,7 +863,7 @@ async function legacyKernelHandler(req, res) {
     }
 
     if (method === "GET" && pathname === "/aics/execution/tasks") {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const status = parsed.searchParams.get("status");
       const tasks = Array.from(db.tasks.values());
       const filtered = status ? tasks.filter((t) => t.status === status) : tasks;
@@ -883,7 +878,7 @@ async function legacyKernelHandler(req, res) {
 
     const lifecycle = parseLifecyclePath(pathname);
     if (method === "POST" && lifecycle) {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const { taskId: lifeTaskId, action } = lifecycle;
       const task = db.tasks.get(lifeTaskId);
       if (!task) return send(req, res, 404, { message: "task not found" });
@@ -915,7 +910,7 @@ async function legacyKernelHandler(req, res) {
 
     const taskIdForGet = parseTaskId(pathname);
     if (method === "GET" && taskIdForGet) {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const task = db.tasks.get(taskIdForGet);
       if (!task) return send(req, res, 404, { message: "task not found" });
       const mappedSteps = (db.stepsByTask.get(taskIdForGet) || []).map(mapStepForClient);
@@ -928,7 +923,7 @@ async function legacyKernelHandler(req, res) {
 
     const taskIdForRerun = parseRerunPath(pathname);
     if (method === "POST" && taskIdForRerun) {
-      if (!requireAuthContext(req, res)) return;
+      if (!(await requireAuthContext(req, res))) return;
       const sourceTask = db.tasks.get(taskIdForRerun);
       if (!sourceTask) return send(req, res, 404, { message: "source task not found" });
       const newTaskId = randomUUID();

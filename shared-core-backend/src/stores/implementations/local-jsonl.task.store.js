@@ -23,8 +23,12 @@ class LocalJsonlTaskStore extends TaskStore {
       .map((line) => JSON.parse(line));
   }
 
-  _appendLine(obj) {
-    fs.appendFileSync(this.filePath, JSON.stringify(obj) + "\n", "utf8");
+  _writeRows(rows) {
+    fs.writeFileSync(
+      this.filePath,
+      rows.length ? rows.map((r) => JSON.stringify(r)).join("\n") + "\n" : "",
+      "utf8"
+    );
   }
 
   async list(ctx, _query) {
@@ -55,8 +59,40 @@ class LocalJsonlTaskStore extends TaskStore {
       created_at: norm.created_at,
       updated_at: norm.updated_at
     };
-    this._appendLine(line);
+    const rows = this._readRows();
+    rows.push(line);
+    this._writeRows(rows);
     return normalizeTaskRow(line);
+  }
+
+  async update(ctx, id, merged) {
+    const uid = userKey(ctx);
+    const rows = this._readRows();
+    const idx = rows.findIndex((r) => r.id === id);
+    if (idx < 0) return null;
+    const row = rows[idx];
+    if (row.user_id !== uid && uid !== "anonymous") return null;
+    const next = {
+      ...row,
+      title: merged.title,
+      status: merged.status,
+      payload: merged.payload,
+      updated_at: merged.updated_at
+    };
+    rows[idx] = next;
+    this._writeRows(rows);
+    return normalizeTaskRow(next);
+  }
+
+  async delete(ctx, id) {
+    const uid = userKey(ctx);
+    const rows = this._readRows();
+    const idx = rows.findIndex((r) => r.id === id);
+    if (idx < 0) return false;
+    if (rows[idx].user_id !== uid && uid !== "anonymous") return false;
+    rows.splice(idx, 1);
+    this._writeRows(rows);
+    return true;
   }
 }
 

@@ -4,6 +4,7 @@ import { useUiStrings } from "../i18n/useUiStrings";
 import { formatPrefLocale, formatPrefMarket, getUiLangMode } from "../i18n/preferenceLabels";
 import { useAuthStore } from "../store/authStore";
 import { apiClient } from "../services/apiClient";
+import { normalizeV1ResponseBody } from "../services/v1Envelope";
 import { performLogoutToLogin } from "../services/authLogoutFlow";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -39,21 +40,25 @@ export const AccountPage = () => {
 
   useEffect(() => {
     apiClient
-      .get<{
-        success: true;
-        user: {
-          userId: string;
-          email: string;
-          market: string;
-          locale: string;
-          product?: string;
-          client_platform?: string;
-        };
-      }>("/auth/me", { validateStatus: () => true })
+      .get<unknown>("/v1/auth/me", { validateStatus: () => true })
       .then((r) => {
-        const d = r.data;
-        if (r.status === 200 && d && typeof d === "object" && "success" in d && d.success === true && "user" in d) {
-          const uu = d.user;
+        const inner = normalizeV1ResponseBody(r.data) as Record<string, unknown> | null;
+        if (
+          r.status === 200 &&
+          inner &&
+          typeof inner === "object" &&
+          inner.success === true &&
+          inner.user &&
+          typeof inner.user === "object"
+        ) {
+          const uu = inner.user as {
+            userId: string;
+            email: string;
+            market: string;
+            locale: string;
+            product?: string;
+            client_platform?: string;
+          };
           setMe({
             user_id: uu.userId,
             email: uu.email,

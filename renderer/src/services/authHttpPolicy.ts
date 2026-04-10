@@ -3,7 +3,14 @@
  */
 
 /** 这些路径的 401 不代表「当前会话在业务侧仍有效」，由调用方处理（登录失败、登出尽力而为）。 */
-export const AUTH_FLOW_PATHS_401_EXEMPT = ["/auth/login", "/auth/logout", "/auth/refresh"];
+export const AUTH_FLOW_PATHS_401_EXEMPT = [
+  "/auth/login",
+  "/auth/logout",
+  "/auth/refresh",
+  "/v1/auth/login",
+  "/v1/auth/logout",
+  "/v1/auth/refresh"
+];
 
 /**
  * `/auth/me` 使用 validateStatus 全吞时走 fetchAuthMeValidated，不触发 axios 错误链；此处可放行显式 GET 401。

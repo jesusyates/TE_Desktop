@@ -305,7 +305,8 @@ export const zhCN = {
     errorResendNotApplicable: "当前邮箱无需重新发送；若已验证过，请返回登录。",
     errorVerifyGeneric: "操作未能完成，请稍后重试。",
     errorNewPasswordShort: "新密码至少 8 位。",
-    errorResetFailed: "重置未能完成，请稍后重试或重新获取验证码。"
+    errorResetFailed: "重置未能完成，请稍后重试或重新获取验证码。",
+    recoveryLinkHint: "已通过邮件链接验证身份，请设置新密码。"
   },
   authOAuth: {
     sectionTitle: "第三方登录（预留）",
@@ -1684,7 +1685,8 @@ export const enUS: UiCatalog = {
     errorResendNotApplicable: "No new code is needed for this email; if you’re already verified, sign in.",
     errorVerifyGeneric: "Something went wrong. Please try again.",
     errorNewPasswordShort: "Use at least 8 characters for your new password.",
-    errorResetFailed: "Reset could not be completed. Try again or request a new code."
+    errorResetFailed: "Reset could not be completed. Try again or request a new code.",
+    recoveryLinkHint: "Your email link verified this session—set a new password below."
   },
   authOAuth: {
     sectionTitle: "Social sign-in (reserved)",

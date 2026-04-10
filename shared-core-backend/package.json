@@ -1,6 +1,6 @@
 {
   "name": "shared-core-backend",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "commonjs",
   "private": true,
   "description": "Shared Core — unified backend (Web / Desktop / Mobile). Express entry, layered architecture, SQLite C-7.",

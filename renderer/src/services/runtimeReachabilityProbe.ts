@@ -18,11 +18,11 @@ function withTimeout(ms: number): AbortSignal {
   return c.signal;
 }
 
-/** Shared Core：`GET /auth/me` 无 token 时 401 仍表示服务进程可达 */
+/** Shared Core：`GET /v1/auth/me` 无 token 时 401 仍表示服务进程可达 */
 export async function probeSharedCoreReachability(): Promise<ReachabilityProbeResult> {
   if (!String(SHARED_CORE_BASE_URL).trim()) return "unreachable";
   try {
-    const res = await authApiClient.get("/auth/me", {
+    const res = await authApiClient.get("/v1/auth/me", {
       signal: withTimeout(4500),
       validateStatus: () => true
     });

@@ -8,7 +8,7 @@ type Props = {
   selectedTaskId: string;
   loading: boolean;
   onSelect: (task: TaskHistoryListEntry) => void;
-  /** J-1：正式账户历史走 DELETE /history/:id */
+  /** DELETE /v1/history/:id */
   onDismiss?: (task: TaskHistoryListEntry) => void;
   /** 每条右侧附加控件（不占主点击区） */
   rowExtra?: (task: TaskHistoryListEntry) => ReactNode;

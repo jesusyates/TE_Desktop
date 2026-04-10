@@ -22,6 +22,7 @@ const authRate = require("./auth.rate-limit");
 const authValidation = require("./auth.validation");
 const authMailer = require("./auth.mailer");
 const authResendCooldown = require("./auth.resend-cooldown");
+const { config } = require("../src/infra/config");
 
 const ACCESS_TTL_SEC = 15 * 60;
 const REFRESH_TTL_SEC = 7 * 24 * 60 * 60;
@@ -67,8 +68,29 @@ function isValidRefreshClaims(p) {
   return true;
 }
 
+/**
+ * 生产主链：AUTH_PROVIDER=supabase — 仅校验 Supabase 环境，不要求 JWT/bootstrap。
+ * 本地遗留链：AUTH_PROVIDER=legacy — JWT + SQLite bootstrap（AUTH_LEGACY_BOOTSTRAP_ENABLE=1 或开发环境）。
+ */
 function ensureAuthEnv() {
+  const c = config();
+  if (c.authProvider === "supabase") {
+    if (!c.supabaseUrl || !c.supabaseServiceRoleKey || !c.supabaseAnonKey) {
+      throw new Error(
+        "AUTH_PROVIDER=supabase 须配置 SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY、SUPABASE_ANON_KEY（见 .env.example）。"
+      );
+    }
+    return;
+  }
+
   getSecret();
+  const allowBootstrap =
+    c.nodeEnv !== "production" || String(process.env.AUTH_LEGACY_BOOTSTRAP_ENABLE || "").trim() === "1";
+  if (!allowBootstrap) {
+    throw new Error(
+      "AUTH_PROVIDER=legacy 在生产环境须设置 AUTH_LEGACY_BOOTSTRAP_ENABLE=1，或改用 AUTH_PROVIDER=supabase（应急/迁移专用）。"
+    );
+  }
   ensureBootstrapEnv();
   authRepository.bootstrapFromEnv();
   const bootEmail = String(process.env.AUTH_BOOTSTRAP_EMAIL).trim().toLowerCase();

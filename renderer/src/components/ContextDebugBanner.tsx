@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "../store/authStore";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { apiClient } from "../services/apiClient";
+import { normalizeV1ResponseBody } from "../services/v1Envelope";
 import { formatPrefLocale, formatPrefMarket, getUiLangMode } from "../i18n/preferenceLabels";
 
 /** AICS_DEBUG_CONTEXT=1（Vite 构建时注入 import.meta.env.AICS_DEBUG_CONTEXT） */
@@ -21,10 +22,11 @@ export function ContextDebugBanner() {
       return;
     }
     apiClient
-      .get<{ success: true; user: { userId: string } }>("/auth/me", { validateStatus: () => true })
+      .get<unknown>("/v1/auth/me", { validateStatus: () => true })
       .then((r) => {
-        const d = r.data;
-        if (r.status === 200 && d?.success === true && d.user?.userId) setMeId(d.user.userId);
+        const inner = normalizeV1ResponseBody(r.data) as { success?: boolean; user?: { userId?: string } } | null;
+        if (r.status === 200 && inner?.success === true && inner.user?.userId)
+          setMeId(String(inner.user.userId));
         else setMeId("?");
       })
       .catch(() => setMeId("?"));

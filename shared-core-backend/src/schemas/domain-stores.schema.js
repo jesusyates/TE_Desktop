@@ -10,20 +10,141 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+/** v1 统一四类；入站别名在写入前收敛 */
+function normalizeTaskStatus(raw) {
+  const s = String(raw == null ? "" : raw)
+    .trim()
+    .toLowerCase();
+  const map = {
+    draft: "pending",
+    planning: "pending",
+    ready: "pending",
+    pending: "pending",
+    queued: "pending",
+    running: "running",
+    success: "completed",
+    partial_success: "completed",
+    completed: "completed",
+    done: "completed",
+    stopped: "completed",
+    failed: "failed",
+    error: "failed",
+    cancelled: "failed"
+  };
+  return map[s] || "pending";
+}
+
 function normalizeTaskForCreate(ctx, payload) {
   const uid = userKey(ctx);
-  const title = payload && payload.title != null ? String(payload.title).slice(0, 500) : "";
-  const status = payload && payload.status != null ? String(payload.status).slice(0, 64) : "draft";
-  const extra = payload && typeof payload === "object" ? { ...payload } : {};
-  delete extra.title;
-  delete extra.status;
+  const p = payload && typeof payload === "object" ? { ...payload } : {};
+  /* id 由表主键承载，不写入 payload JSON */
+  delete p.id;
+  const titleRaw = p.title != null ? String(p.title).trim() : "";
+  const title =
+    titleRaw.length > 0
+      ? titleRaw.slice(0, 500)
+      : p.oneLinePrompt != null
+        ? String(p.oneLinePrompt).slice(0, 500)
+        : "";
+  const status = normalizeTaskStatus(p.status);
+  delete p.title;
+  delete p.status;
   return {
     user_id: uid,
     title,
     status,
-    payload: extra,
+    payload: p,
     created_at: nowIso(),
     updated_at: nowIso()
+  };
+}
+
+/**
+ * 合并 PATCH：body 可为 status、result、lastErrorSummary、steps、appendLog、upsertStep、title 等
+ * existing 为 store 内存行：{ id, userId, title, status, payload, createdAt, updatedAt } 或由 list 归一化行反推
+ */
+function mergeTaskPatchFromBody(existing, body) {
+  const b = body && typeof body === "object" ? body : {};
+  const nextStatus = b.status != null ? normalizeTaskStatus(b.status) : null;
+  const nextTitle =
+    b.title != null
+      ? String(b.title).slice(0, 500)
+      : b.prompt != null
+        ? String(b.prompt).slice(0, 500)
+        : null;
+
+  let payload =
+    existing.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+      ? { ...existing.payload }
+      : {};
+
+  if (b.result !== undefined) payload.result = b.result;
+  if (b.lastErrorSummary !== undefined) payload.lastErrorSummary = b.lastErrorSummary;
+  if (Array.isArray(b.steps)) payload.steps = b.steps;
+
+  if (b.appendLog && typeof b.appendLog === "object") {
+    const logs = Array.isArray(payload.logs) ? [...payload.logs] : [];
+    logs.push({ ...b.appendLog, createdAt: b.appendLog.createdAt || nowIso() });
+    payload.logs = logs;
+  }
+
+  if (b.upsertStep && typeof b.upsertStep === "object") {
+    const st = b.upsertStep;
+    const sid = st.stepId != null ? String(st.stepId) : "";
+    const steps = Array.isArray(payload.steps) ? [...payload.steps] : [];
+    const idx = steps.findIndex((x) => x && String(x.id) === sid);
+    const merged = {
+      id: sid,
+      order: st.stepOrder,
+      title: st.title,
+      action: st.actionName != null ? st.actionName : st.action,
+      status: st.status,
+      input: st.input,
+      output: st.output,
+      error: st.error,
+      errorType: st.errorType,
+      latency: st.latency
+    };
+    if (idx >= 0) steps[idx] = { ...steps[idx], ...merged };
+    else steps.push(merged);
+    payload.steps = steps;
+  }
+
+  return {
+    title: nextTitle != null ? nextTitle : existing.title,
+    status: nextStatus !== null ? nextStatus : existing.status,
+    payload,
+    updated_at: nowIso()
+  };
+}
+
+/** 将 normalizeTaskRow 结果转回 store 行（仅用于 patch 链） */
+function denormalizeRowToStoreShape(row) {
+  if (!row || typeof row !== "object") return null;
+  const o = row;
+  const payload = {};
+  const keep = new Set([
+    "id",
+    "userId",
+    "title",
+    "status",
+    "createdAt",
+    "updatedAt",
+    "user_id",
+    "created_at",
+    "updated_at"
+  ]);
+  for (const k of Object.keys(o)) {
+    if (!keep.has(k)) payload[k] = o[k];
+  }
+  return {
+    id: o.id,
+    userId: o.userId != null ? o.userId : o.user_id,
+    title: o.title,
+    status: normalizeTaskStatus(o.status),
+    payload,
+    createdAt: o.createdAt != null ? o.createdAt : o.created_at,
+    updatedAt: o.updatedAt != null ? o.updatedAt : o.updated_at
   };
 }
 
@@ -116,8 +237,11 @@ function normalizeTemplateRow(row) {
 
 module.exports = {
   userKey,
+  normalizeTaskStatus,
   normalizeTaskForCreate,
   normalizeTaskRow,
+  mergeTaskPatchFromBody,
+  denormalizeRowToStoreShape,
   normalizeMemoryAppend,
   normalizeMemoryEntryRow,
   normalizeTemplateForCreate,

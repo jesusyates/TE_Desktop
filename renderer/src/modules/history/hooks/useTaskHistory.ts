@@ -29,7 +29,7 @@ function serverRowToEntry(row: HistoryListItemDto): TaskHistoryListEntry {
 }
 
 /**
- * J-1：账户级正式历史 — GET /history/list 分页 + DELETE /history/:id（侧栏与 /history 共用，唯一真相源）。
+ * History：GET /v1/history 分页 + DELETE /v1/history/:id（与 task store 同源）。
  */
 export function useTaskHistory(statusFilter: TaskHistoryStatusFilter = "all") {
   const [tasks, setTasks] = useState<TaskHistoryListEntry[]>([]);

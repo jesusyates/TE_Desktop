@@ -39,7 +39,7 @@ function bootstrapStorageAndAuth() {
   } catch (e) {
     console.error("[shared-core-backend] auth bootstrap failed:", e.message || e);
     console.error(
-      "  Copy shared-core-backend/.env.example to .env and set JWT_SECRET (or SHARED_CORE_AUTH_SECRET), AUTH_BOOTSTRAP_*."
+      "  Set AUTH_PROVIDER=supabase with SUPABASE_* keys, or legacy: JWT_SECRET + AUTH_BOOTSTRAP_* (+ AUTH_LEGACY_BOOTSTRAP_ENABLE in production)."
     );
     process.exit(1);
   }

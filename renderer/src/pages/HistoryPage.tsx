@@ -13,7 +13,7 @@ import {
 import "../modules/history/history.css";
 
 /**
- * J-1：正式 History 页 — 与侧栏同源（useTaskHistory + DELETE /history/:id），不依本地 warm 为真相。
+ * History 页 — useTaskHistory + /v1/history。
  */
 export const HistoryPage = () => {
   const u = useUiStrings();

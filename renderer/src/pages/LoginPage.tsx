@@ -71,12 +71,7 @@ export const LoginPage = () => {
       })
       .catch((e: unknown) => {
         if (import.meta.env.DEV) {
-          console.error("[login] failed", {
-            baseURL: SHARED_CORE_BASE_URL,
-            path: "/auth/login",
-            body: { email: em, password: "[redacted]" },
-            err: e
-          });
+          console.error("[login] failed", { baseURL: SHARED_CORE_BASE_URL, path: "/v1/auth/login", email: em, err: e });
         }
         if (hasAuthCode(e, "EMAIL_NOT_VERIFIED")) {
           setEmailNotVerifiedGate(true);

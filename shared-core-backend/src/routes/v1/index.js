@@ -42,8 +42,35 @@ router.get(
 router.post(
   "/tasks",
   asyncRoute(async (req, res) => {
-    const data = await tasksService.createTaskPlaceholder(req.context);
+    const data = await tasksService.createTaskFromRequest(req.context, req.body || {});
     return sendV1Success(res, req, { item: data }, 201, null);
+  })
+);
+
+router.patch(
+  "/tasks/:id",
+  asyncRoute(async (req, res) => {
+    const row = await tasksService.patchTask(req.context, req.params.id, req.body || {});
+    if (!row) return sendV1Failure(res, req, 404, "NOT_FOUND", "task not found");
+    return sendV1Success(res, req, { item: row }, 200, null);
+  })
+);
+
+router.post(
+  "/tasks/:id/rerun",
+  asyncRoute(async (req, res) => {
+    const row = await tasksService.rerunTask(req.context, req.params.id);
+    if (!row) return sendV1Failure(res, req, 404, "NOT_FOUND", "task not found");
+    return sendV1Success(res, req, { item: row }, 201, null);
+  })
+);
+
+router.delete(
+  "/tasks/:id",
+  asyncRoute(async (req, res) => {
+    const ok = await tasksService.deleteTask(req.context, req.params.id);
+    if (!ok) return sendV1Failure(res, req, 404, "NOT_FOUND", "task not found");
+    return sendV1Success(res, req, { deleted: true }, 200, null);
   })
 );
 
@@ -57,15 +84,47 @@ router.get(
 );
 
 router.get(
+  "/history/:id",
+  asyncRoute(async (req, res) => {
+    const row = await historyService.getHistoryById(req.context, req.params.id);
+    if (!row) return sendV1Failure(res, req, 404, "NOT_FOUND", "history not found");
+    return sendV1Success(res, req, { item: row }, 200, null);
+  })
+);
+
+router.delete(
+  "/history/:id",
+  asyncRoute(async (req, res) => {
+    const ok = await historyService.deleteHistory(req.context, req.params.id);
+    if (!ok) return sendV1Failure(res, req, 404, "NOT_FOUND", "history not found");
+    return sendV1Success(res, req, { deleted: true }, 200, null);
+  })
+);
+
+router.get(
   "/history",
   asyncRoute(async (req, res) => {
-    const data = await historyService.listHistoryPlaceholder(req.context);
-    return sendV1Success(res, req, { items: data.items, page: data.page }, 200, {
-      page: data.page || 1,
-      pageSize: 20,
-      total: 0,
-      totalPages: 0
-    });
+    const data = await historyService.listHistory(req.context, req.query || {});
+    return sendV1Success(
+      res,
+      req,
+      { items: data.items, page: data.page, pageSize: data.pageSize },
+      200,
+      {
+        page: data.page,
+        pageSize: data.pageSize,
+        total: data.total,
+        totalPages: data.totalPages
+      }
+    );
+  })
+);
+
+router.post(
+  "/history",
+  asyncRoute(async (req, res) => {
+    const row = await historyService.createHistoryEntry(req.context, req.body || {});
+    return sendV1Success(res, req, { item: row }, 201, null);
   })
 );
 

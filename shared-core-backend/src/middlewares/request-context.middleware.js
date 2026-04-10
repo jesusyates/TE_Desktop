@@ -7,12 +7,16 @@ const {
 /**
  * 唯一 request context：每条请求先经此中间件再进入 route / compatibility。
  */
-function unifiedContextMiddleware(req, res, next) {
-  const ctx = createEmptyContext();
-  normalizeContext(req, ctx);
-  applySessionToContext(req, ctx);
-  req.context = ctx;
-  next();
+async function unifiedContextMiddleware(req, res, next) {
+  try {
+    const ctx = createEmptyContext();
+    normalizeContext(req, ctx);
+    await applySessionToContext(req, ctx);
+    req.context = ctx;
+    next();
+  } catch (e) {
+    next(e);
+  }
 }
 
 /** @deprecated 使用 unifiedContextMiddleware 内联的 pickHeader；保留供少数模块复用 */

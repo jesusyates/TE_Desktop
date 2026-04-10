@@ -7,6 +7,7 @@ import { isAuth401ResponseExempt } from "./authHttpPolicy";
 import { tryRefreshSession } from "./authSilentRefresh";
 import { invalidateAuthenticatedSessionAndGoLogin } from "./authSessionInvalidation";
 import { toUserFacingErrorMessage } from "./userFacingErrorMessage";
+import { logAxiosFailure } from "./apiErrorLog";
 
 const parsedTimeout = Number(import.meta.env.AICS_API_TIMEOUT_MS);
 const apiTimeoutMs =
@@ -27,6 +28,7 @@ function attachStandardRequestInterceptor(
     const locale = await clientSession.getLocale();
     config.headers["X-Client-Platform"] = "desktop";
     config.headers["X-Client-Market"] = market;
+    config.headers["X-Client-Locale"] = locale;
     config.headers["X-Client-Preference-Market"] = market;
     config.headers["X-Client-Preference-Locale"] = locale;
     config.headers["X-Client-Version"] = CLIENT_VERSION;
@@ -46,6 +48,7 @@ function attachAuthResponseInterceptor(instance: AxiosInstance): void {
     (res) => res,
     async (error) => {
       if (!isAxiosError(error)) return Promise.reject(error);
+      logAxiosFailure("shared-core", error);
       const cfg = error.config;
       const url = typeof cfg?.url === "string" ? cfg.url : "";
       if (isAuth401ResponseExempt(url)) return Promise.reject(error);

@@ -26,8 +26,30 @@ function sendV1Failure(res, req, status, code, message) {
   });
 }
 
+const AUTH_ERROR_CODES = new Set([
+  "EMAIL_NOT_VERIFIED",
+  "INVALID_CREDENTIALS",
+  "TOKEN_EXPIRED",
+  "PASSWORD_RESET_REQUIRED",
+  "INVALID_EMAIL_FORMAT",
+  "EMAIL_ALREADY_EXISTS",
+  "TOO_MANY_REQUESTS",
+  "TOO_MANY_ATTEMPTS",
+  "RESEND_COOLDOWN",
+  "RATE_LIMITED",
+  "INVALID_VERIFICATION_TOKEN"
+]);
+
 function mapLegacyAuthBodyToError(status, body) {
   const msg = (body && body.message) || "request_failed";
+  const explicit =
+    body &&
+    typeof body === "object" &&
+    typeof body.code === "string" &&
+    AUTH_ERROR_CODES.has(body.code);
+  if (explicit) {
+    return { code: body.code, message: String(msg) };
+  }
   if (status === 401) return { code: "UNAUTHORIZED", message: String(msg) };
   if (status === 403) return { code: "FORBIDDEN", message: String(msg) };
   if (status === 404) return { code: "NOT_FOUND", message: String(msg) };

@@ -1,10 +1,13 @@
 /**
- * D-7-5A：双后端 HTTP 基址单点配置（无密钥、无环境大系统）。
+ * D-7-5A：双后端 HTTP 基址单点配置（无密钥）。
  *
- * - **SHARED_CORE_BASE_URL**：账户 / 偏好 / billing / `apiClient` / `authApi`（典型端口 4000）。
- * - **AI_GATEWAY_BASE_URL**：analyze / plan / safety / audit / usage 等（`api.ts` fetch，典型端口 3000）。
+ * - **SHARED_CORE_BASE_URL**：账户 / 偏好 / `apiClient` / `authApi`（shared-core-backend，默认端口 4000）。
+ * - **AI_GATEWAY_BASE_URL**：analyze / plan / 等（`aiGatewayClient`，典型端口 3000）。
  *
- * 来源：`import.meta.env.VITE_*`（Vite 在 `vite.config.ts` 中可从进程环境透传）→ 下方开发默认值。
+ * Shared Core 优先级：
+ * 1. `VITE_SHARED_CORE_BASE_URL` / `AICS_SHARED_CORE_BASE_URL`（显式 URL）
+ * 2. `VITE_AICS_BACKEND_PROFILE` = `local` | `development` | `dev` → `http://127.0.0.1:4000`
+ * 3. 其它 → `http://43.160.229.50:4000`（当前默认：接线上 shared-core-backend）
  */
 
 function normalizeBaseUrl(raw: string | undefined): string | undefined {
@@ -13,17 +16,27 @@ function normalizeBaseUrl(raw: string | undefined): string | undefined {
   return t.length > 0 ? t : undefined;
 }
 
-const DEFAULT_SHARED_CORE_BASE_URL = "http://localhost:4000";
+const CORE_LOCAL = "http://127.0.0.1:4000";
+const CORE_REMOTE = "http://43.160.229.50:4000";
 const DEFAULT_AI_GATEWAY_BASE_URL = "http://43.160.229.50:3000";
 
-export const SHARED_CORE_BASE_URL =
-  normalizeBaseUrl(import.meta.env.VITE_SHARED_CORE_BASE_URL) ?? DEFAULT_SHARED_CORE_BASE_URL;
+function resolveSharedCoreBaseUrl(): string {
+  const explicit = normalizeBaseUrl(import.meta.env.VITE_SHARED_CORE_BASE_URL);
+  if (explicit) return explicit;
+  const profile = String(import.meta.env.VITE_AICS_BACKEND_PROFILE ?? "remote")
+    .trim()
+    .toLowerCase();
+  if (profile === "local" || profile === "development" || profile === "dev") return CORE_LOCAL;
+  return CORE_REMOTE;
+}
+
+export const SHARED_CORE_BASE_URL = resolveSharedCoreBaseUrl();
 
 export const AI_GATEWAY_BASE_URL =
   normalizeBaseUrl(import.meta.env.VITE_AI_GATEWAY_BASE_URL) ?? DEFAULT_AI_GATEWAY_BASE_URL;
 
 /**
- * Auth：邮箱重发验证码。默认开启（Shared Core 已接 POST /auth/resend-verification）。
+ * Auth：邮箱重发验证码。默认开启（Shared Core 已接 POST /v1/auth/resend-verification）。
  * 若某环境未部署该接口，可设 `VITE_AUTH_VERIFICATION_RESEND_ENABLED=0` 禁用按钮。
  */
 export const AUTH_VERIFICATION_RESEND_ENABLED =

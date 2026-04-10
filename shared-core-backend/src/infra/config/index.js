@@ -38,6 +38,22 @@ function getConfig() {
   const nodeEnv = readEnv("NODE_ENV", "development");
   const port = readInt("PORT", 4000);
   const storageMode = resolveStorageMode();
+  const supabaseUrl = readEnv("SUPABASE_URL", "");
+  const supabaseServiceRoleKey = readEnv("SUPABASE_SERVICE_ROLE_KEY", "");
+  const supabaseAnonKey = readEnv("SUPABASE_ANON_KEY", "");
+  const authRaw = process.env.AUTH_PROVIDER;
+  let authProvider =
+    authRaw == null || String(authRaw).trim() === ""
+      ? ""
+      : String(authRaw).replace(/^\uFEFF/, "").trim().toLowerCase();
+  if (!authProvider) {
+    authProvider =
+      supabaseUrl && supabaseServiceRoleKey && supabaseAnonKey && nodeEnv === "production"
+        ? "supabase"
+        : supabaseAnonKey
+          ? "supabase"
+          : "legacy";
+  }
 
   return Object.freeze({
     nodeEnv,
@@ -45,8 +61,12 @@ function getConfig() {
     apiBaseUrl: readEnv("API_BASE_URL", `http://127.0.0.1:${port}`),
     logLevel: readEnv("LOG_LEVEL", nodeEnv === "production" ? "info" : "debug"),
 
-    supabaseUrl: readEnv("SUPABASE_URL", ""),
-    supabaseServiceRoleKey: readEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
+    supabaseUrl,
+    supabaseServiceRoleKey,
+    /** GoTrue password / refresh grant（仅服务端） */
+    supabaseAnonKey,
+
+    authProvider,
 
     openaiApiKey: readEnv("OPENAI_API_KEY", ""),
 

@@ -51,6 +51,7 @@ export function hasAuthCode(e: unknown, code: string): boolean {
  */
 export function formatLoginErrorMessage(e: unknown, u: LoginErrorUiStrings): string {
   if (hasAuthCode(e, "EMAIL_NOT_VERIFIED")) return u.errorEmailNotVerified;
+  if (hasAuthCode(e, "INVALID_CREDENTIALS")) return u.errorInvalidCredentials;
   if (hasAuthCode(e, "RESEND_COOLDOWN")) {
     const rs =
       e instanceof Error && "remainingSeconds" in e

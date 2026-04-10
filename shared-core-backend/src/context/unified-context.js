@@ -6,7 +6,7 @@
  */
 const { randomUUID } = require("crypto");
 const { config } = require("../infra/config");
-const { resolveSession } = require("../../auth/session.middleware");
+const { resolveSessionAsync } = require("../../auth/session.middleware");
 
 function pickHeader(req, name) {
   const v = req.get ? req.get(name) : req.headers[name.toLowerCase()];
@@ -77,8 +77,8 @@ function normalizeContext(req, ctx) {
   if (ctx.locale) ctx.locale = String(ctx.locale).trim();
 }
 
-function applySessionToContext(req, ctx) {
-  resolveSession(req);
+async function applySessionToContext(req, ctx) {
+  await resolveSessionAsync(req);
   if (!req.session || typeof req.session !== "object") return;
   ctx.userId = req.session.user_id;
   ctx.market = req.session.market;

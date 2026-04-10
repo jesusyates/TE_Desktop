@@ -13,9 +13,16 @@ function validateBoot() {
   if (!c.nodeEnv) errors.push("NODE_ENV missing");
   if (!c.port || c.port < 1 || c.port > 65535) errors.push("PORT invalid");
 
-  if (!c.jwtSecret || String(c.jwtSecret).length < 16) {
-    if (c.nodeEnv === "production") errors.push("JWT_SECRET (or SHARED_CORE_AUTH_SECRET) required, min 16 chars");
-    else warns.push("JWT_SECRET short or missing — dev only");
+  const supabaseAuth = c.authProvider === "supabase";
+  if (!supabaseAuth) {
+    if (!c.jwtSecret || String(c.jwtSecret).length < 16) {
+      if (c.nodeEnv === "production") errors.push("JWT_SECRET (or SHARED_CORE_AUTH_SECRET) required, min 16 chars");
+      else warns.push("JWT_SECRET short or missing — dev only");
+    }
+  } else if (c.nodeEnv === "production") {
+    if (!c.supabaseUrl || !c.supabaseServiceRoleKey || !c.supabaseAnonKey) {
+      errors.push("SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY required when AUTH_PROVIDER=supabase");
+    }
   }
 
   if (!ALLOWED_STORAGE.has(c.storageMode)) {

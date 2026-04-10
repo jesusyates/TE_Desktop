@@ -55,6 +55,34 @@ class SupabaseTaskStore extends TaskStore {
     if (error) throw new Error(error.message || "supabase_insert_task");
     return normalizeTaskRow(row);
   }
+
+  async update(ctx, id, merged) {
+    const uid = userKey(ctx);
+    const client = this._client();
+    const { data, error } = await client
+      .from("v1_tasks")
+      .update({
+        title: merged.title,
+        status: merged.status,
+        payload: merged.payload,
+        updated_at: merged.updated_at
+      })
+      .eq("id", id)
+      .eq("user_id", uid)
+      .select("*")
+      .maybeSingle();
+    if (error) throw new Error(error.message || "supabase_update_task");
+    if (!data) return null;
+    return normalizeTaskRow(data);
+  }
+
+  async delete(ctx, id) {
+    const uid = userKey(ctx);
+    const client = this._client();
+    const { data, error } = await client.from("v1_tasks").delete().eq("id", id).eq("user_id", uid).select("id");
+    if (error) throw new Error(error.message || "supabase_delete_task");
+    return Array.isArray(data) && data.length > 0;
+  }
 }
 
 module.exports = { SupabaseTaskStore };

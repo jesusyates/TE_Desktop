@@ -64,6 +64,44 @@ class DualWriteTaskStore extends TaskStore {
     }
     return localRow;
   }
+
+  async update(ctx, id, merged) {
+    const localRow = await this.local.update(ctx, id, merged);
+    if (!localRow) return null;
+    try {
+      await this.cloud.update(ctx, id, merged);
+    } catch (e) {
+      logger.error({
+        event: "dual_write_cloud_failed",
+        domain: "task",
+        op: "update",
+        requestId: ctx && ctx.requestId,
+        taskId: id,
+        error: e.message || String(e)
+      });
+      throw new Error(`dual_write_cloud_failed: ${e.message || e}`);
+    }
+    return localRow;
+  }
+
+  async delete(ctx, id) {
+    const localOk = await this.local.delete(ctx, id);
+    if (!localOk) return false;
+    try {
+      await this.cloud.delete(ctx, id);
+    } catch (e) {
+      logger.error({
+        event: "dual_write_cloud_failed",
+        domain: "task",
+        op: "delete",
+        requestId: ctx && ctx.requestId,
+        taskId: id,
+        error: e.message || String(e)
+      });
+      throw new Error(`dual_write_cloud_failed: ${e.message || e}`);
+    }
+    return localOk;
+  }
 }
 
 module.exports = { DualWriteTaskStore };

@@ -8,6 +8,8 @@ const viteSharedCoreBase =
   process.env.VITE_SHARED_CORE_BASE_URL ?? process.env.AICS_SHARED_CORE_BASE_URL ?? "";
 const viteAiGatewayBase =
   process.env.VITE_AI_GATEWAY_BASE_URL ?? process.env.AICS_AI_GATEWAY_BASE_URL ?? "";
+const viteBackendProfile =
+  process.env.VITE_AICS_BACKEND_PROFILE ?? process.env.AICS_BACKEND_PROFILE ?? "";
 
 export default defineConfig({
   root: __dirname,
@@ -17,7 +19,8 @@ export default defineConfig({
     "import.meta.env.AICS_DEBUG_CONTEXT": JSON.stringify(aicsDebug),
     "import.meta.env.AICS_API_TIMEOUT_MS": JSON.stringify(aicsApiTimeout),
     "import.meta.env.VITE_SHARED_CORE_BASE_URL": JSON.stringify(viteSharedCoreBase),
-    "import.meta.env.VITE_AI_GATEWAY_BASE_URL": JSON.stringify(viteAiGatewayBase)
+    "import.meta.env.VITE_AI_GATEWAY_BASE_URL": JSON.stringify(viteAiGatewayBase),
+    "import.meta.env.VITE_AICS_BACKEND_PROFILE": JSON.stringify(viteBackendProfile)
   },
   plugins: [react()],
   server: {

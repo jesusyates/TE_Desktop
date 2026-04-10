@@ -6,9 +6,11 @@ import {
   loginRequest,
   registerRequest,
   verifyEmailRequest,
+  verifyEmailWithLinkToken,
   resendVerificationRequest,
   forgotPasswordRequest,
   resetPasswordRequest,
+  resetPasswordWithRecoveryToken,
   fetchAuthMe
 } from "./authApi";
 import { useAuthStore } from "../store/authStore";
@@ -37,7 +39,7 @@ export async function loginWithEmailPassword(email: string, password: string): P
   await applyAuthSessionEnvelope(res);
 }
 
-/** 注册：仅创建 pending_verification 用户并发码，不写入会话 */
+/** 注册：须完成邮箱验证后方可登录（正式闭环，不经 auto-confirm）。 */
 export async function registerAccountOnly(email: string, password: string): Promise<{ email: string }> {
   const res = await registerRequest(email.trim(), password);
   return { email: res.email.trim() };
@@ -46,6 +48,12 @@ export async function registerAccountOnly(email: string, password: string): Prom
 /** 邮箱验证成功后签发令牌并写入会话 */
 export async function verifyEmailAndSignIn(email: string, code: string): Promise<void> {
   const res = await verifyEmailRequest(email.trim(), code.trim());
+  await applyAuthSessionEnvelope(res);
+}
+
+/** 邮件确认链接内 token（与后端 `token_hash` 一致） */
+export async function verifyEmailFromLinkToken(token_hash: string, type?: string): Promise<void> {
+  const res = await verifyEmailWithLinkToken(token_hash.trim(), type);
   await applyAuthSessionEnvelope(res);
 }
 
@@ -61,6 +69,21 @@ export async function resetPasswordWithCode(
   email: string,
   code: string,
   newPassword: string
-): Promise<void> {
-  await resetPasswordRequest(email.trim(), code.trim(), newPassword);
+): Promise<boolean> {
+  const session = await resetPasswordRequest(email.trim(), code.trim(), newPassword);
+  if (session) {
+    await applyAuthSessionEnvelope(session);
+    return true;
+  }
+  return false;
+}
+
+/** 忘记密码邮件中的长 token（非 6 位 OTP） */
+export async function resetPasswordFromMailToken(tokenHash: string, newPassword: string): Promise<boolean> {
+  const session = await resetPasswordWithRecoveryToken(tokenHash.trim(), newPassword);
+  if (session) {
+    await applyAuthSessionEnvelope(session);
+    return true;
+  }
+  return false;
 }
