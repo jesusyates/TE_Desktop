@@ -1731,11 +1731,6 @@ body[data-theme="dark"] .execution-stage.execution-stage--live {
   flex-wrap: wrap;
 }
 
-.account-identity-toolbar__status {
-  margin-right: auto;
-  min-height: 1.25rem;
-}
-
 .account-identity-avatar {
   width: 48px;
   height: 48px;

@@ -156,6 +156,15 @@ router.get(
 
   "/me",
 
+  (req, res, next) => {
+    res.setHeader("Deprecation", "true");
+    res.setHeader(
+      "Link",
+      '</v1/account/session>; rel="successor-version", </v1/account/entitlements>; rel="related"'
+    );
+    next();
+  },
+
   asyncRoute(async (req, res) => {
 
     const h = pickAuth();

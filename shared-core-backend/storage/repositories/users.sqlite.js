@@ -15,7 +15,11 @@ function rowToUser(r) {
     email_verified_at:
       r.email_verified_at != null && String(r.email_verified_at).trim() !== ""
         ? String(r.email_verified_at)
-        : null
+        : null,
+    created_at:
+      r.created_at != null && String(r.created_at).trim() !== "" ? String(r.created_at) : null,
+    updated_at:
+      r.updated_at != null && String(r.updated_at).trim() !== "" ? String(r.updated_at) : null
   };
 }
 
@@ -34,7 +38,7 @@ function findByEmail(email) {
 function findById(userId) {
   const r = getDb()
     .prepare(
-      `SELECT user_id, email, password_hash, market, locale, status, email_verified_at FROM users WHERE user_id = ?`
+      `SELECT user_id, email, password_hash, market, locale, status, email_verified_at, created_at, updated_at FROM users WHERE user_id = ?`
     )
     .get(userId);
   return rowToUser(r);

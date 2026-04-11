@@ -1,7 +1,8 @@
 /**
- * public.profiles — 业务用户扩展（service_role；与 auth.users.id 对齐）。
+ * public.profiles — 业务用户扩展（经 user.adapter；禁止在此直引 Supabase SDK）。
  */
-const { getSupabaseAdminClient } = require("../../infra/supabase/client");
+const userAdapter = require("../../infra/supabase/adapters/user.adapter");
+const { isSupabaseConfigured } = require("../../infra/supabase/client");
 
 /**
  * @param {string} userId
@@ -9,12 +10,12 @@ const { getSupabaseAdminClient } = require("../../infra/supabase/client");
  */
 async function getProfileByUserId(userId) {
   const id = userId != null ? String(userId).trim() : "";
-  if (!id) return null;
-  const client = getSupabaseAdminClient();
-  if (!client) return null;
-  const { data, error } = await client.from("profiles").select("*").eq("id", id).maybeSingle();
-  if (error) return null;
-  return data || null;
+  if (!id || !isSupabaseConfigured()) return null;
+  try {
+    return await userAdapter.fetchProfile(id);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -22,17 +23,18 @@ async function getProfileByUserId(userId) {
  */
 async function ensureProfileRow(userId, email, market, locale) {
   const id = userId != null ? String(userId).trim() : "";
-  if (!id) return false;
-  const client = getSupabaseAdminClient();
-  if (!client) return false;
+  if (!id || !isSupabaseConfigured()) return false;
   const row = {
     id,
     email: email != null ? String(email).trim() : null,
     market: market != null && String(market).trim() ? String(market).trim().toLowerCase() : "global",
     locale: locale != null && String(locale).trim() ? String(locale).trim() : "en"
   };
-  const { error } = await client.from("profiles").upsert(row, { onConflict: "id" });
-  return !error;
+  try {
+    return await userAdapter.upsertProfile(row);
+  } catch {
+    return false;
+  }
 }
 
 /**

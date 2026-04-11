@@ -616,6 +616,8 @@ async function legacyKernelHandler(req, res) {
 
     if (method === "GET" && pathname === "/billing/entitlement") {
       if (!(await requireAuthContext(req, res))) return;
+      res.setHeader("Deprecation", "true");
+      res.setHeader("Link", '</v1/account/entitlements>; rel="successor-version"');
       const ent = entitlementService.getEntitlement(req.context.userId, req.context.product);
       return send(req, res, 200, {
         user_id: ent.user_id,

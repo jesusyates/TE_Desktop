@@ -3,6 +3,16 @@
  */
 const { getDb } = require("../db");
 
+function defaultQuotaTokens() {
+  try {
+    const { config } = require("../../src/infra/config");
+    const n = config().quotaDefaultTokens;
+    return Number.isFinite(n) && n > 0 ? n : 100_000;
+  } catch {
+    return 100_000;
+  }
+}
+
 function normalizeRow(r) {
   return {
     user_id: r.user_id,
@@ -10,7 +20,11 @@ function normalizeRow(r) {
     plan: r.plan,
     quota: r.quota,
     used: r.used,
-    status: r.status
+    status: r.status,
+    created_at:
+      r.created_at != null && String(r.created_at).trim() !== "" ? String(r.created_at) : null,
+    updated_at:
+      r.updated_at != null && String(r.updated_at).trim() !== "" ? String(r.updated_at) : null
   };
 }
 
@@ -22,12 +36,13 @@ function selectEntitlement(user_id, product) {
 }
 
 function insertDefaultEntitlement(user_id, product, nowIso) {
+  const q = defaultQuotaTokens();
   getDb()
     .prepare(
       `INSERT INTO entitlements (user_id, product, plan, quota, used, status, created_at, updated_at)
-       VALUES (?, ?, 'free', 100, 0, 'active', ?, ?)`
+       VALUES (?, ?, 'free', ?, 0, 'active', ?, ?)`
     )
-    .run(user_id, product, nowIso, nowIso);
+    .run(user_id, product, q, nowIso, nowIso);
 }
 
 /**
@@ -66,10 +81,11 @@ function atomicConsume(user_id, product, action, amount, meta = {}) {
   try {
     let ent = db.prepare(`SELECT * FROM entitlements WHERE user_id = ? AND product = ?`).get(user_id, product);
     if (!ent) {
+      const q = defaultQuotaTokens();
       db.prepare(
         `INSERT INTO entitlements (user_id, product, plan, quota, used, status, created_at, updated_at)
-         VALUES (?, ?, 'free', 100, 0, 'active', ?, ?)`
-      ).run(user_id, product, now, now);
+         VALUES (?, ?, 'free', ?, 0, 'active', ?, ?)`
+      ).run(user_id, product, q, now, now);
       ent = db.prepare(`SELECT * FROM entitlements WHERE user_id = ? AND product = ?`).get(user_id, product);
     }
     if (ent.status !== "active") {

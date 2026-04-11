@@ -1,6 +1,5 @@
 /**
- * Domain store 工厂：由 STORAGE_MODE 决定 task / memory / template 实现。
- * service 禁止 import 本文件以外的具体实现路径。
+ * Domain store 工厂：由 domainStorageMode 决定 task / memory / template / taskRun 实现。
  */
 const path = require("path");
 const { config } = require("../infra/config");
@@ -15,15 +14,14 @@ const { InMemoryMemoryDomainStore } = require("./implementations/memory.memory-d
 const { LocalJsonlMemoryDomainStore } = require("./implementations/local-jsonl.memory-domain.store");
 const { SupabaseMemoryDomainStore } = require("./implementations/supabase.memory-domain.store");
 
-const { MemoryTemplateStore } = require("./implementations/memory.template.store");
-const { LocalJsonlTemplateStore } = require("./implementations/local-jsonl.template.store");
-const { SupabaseTemplateStore } = require("./implementations/supabase.template.store");
-
-function resolveDomainMode(raw) {
-  const m = (raw || "").toLowerCase();
-  if (m === "stub_supabase") return isSupabaseConfigured() ? "cloud_primary" : "memory";
-  return m;
-}
+const { createTaskRunStore } = require("./task/taskRun.store");
+const { createResultStore } = require("./result/result.store");
+const { createHistoryStore } = require("./history/history.store");
+const { createMemoryAssetStore } = require("./memory/memory.store");
+const { createTemplateCanonicalStore } = require("./template/template.store");
+const { createUsageStore } = require("./usage/usage.store");
+const { createSettingsStore } = require("./settings/settings.store");
+const { createFeatureFlagStore } = require("./featureFlag/featureFlag.store");
 
 function localStoreDir(c) {
   return path.join(c.backendRoot, "storage", "local-stores");
@@ -33,7 +31,7 @@ function localStoreDir(c) {
  * @param {ReturnType<typeof config>} [c]
  */
 function createDomainStores(c = config()) {
-  const mode = resolveDomainMode(c.storageMode);
+  const mode = c.domainStorageMode || c.storageMode;
   const dir = localStoreDir(c);
 
   const taskMem = new MemoryTaskStore();
@@ -44,41 +42,129 @@ function createDomainStores(c = config()) {
   const memLocal = new LocalJsonlMemoryDomainStore(dir);
   const memCloud = new SupabaseMemoryDomainStore();
 
-  const tplMem = new MemoryTemplateStore();
-  const tplLocal = new LocalJsonlTemplateStore(path.join(dir, "templates.jsonl"));
-  const tplCloud = new SupabaseTemplateStore();
+  const memoryAsset = createMemoryAssetStore(mode, dir);
+  const templateCanon = createTemplateCanonicalStore(mode, dir);
+  const usage = createUsageStore(mode, dir);
+  const settings = createSettingsStore(mode, dir);
+  const featureFlag = createFeatureFlagStore(mode, dir);
 
-  /** @type {{ task: import('./task-store.base').TaskStore, memory: import('./memory-domain-store.base').MemoryDomainStore, template: import('./template-store.base').TemplateStore }} */
-  const out = { task: taskMem, memory: memMem, template: tplMem };
+  const taskRunPath = path.join(dir, "task-runs.jsonl");
+  const taskRun = createTaskRunStore(mode, taskRunPath);
+  const resultsPath = path.join(dir, "results.jsonl");
+  const historyPath = path.join(dir, "history.jsonl");
+  const result = createResultStore(mode, resultsPath);
+  const history = createHistoryStore(mode, historyPath);
+
+  /** @type {{ task: import('./task-store.base').TaskStore, memory: import('./memory-domain-store.base').MemoryDomainStore, memoryAsset: object, template: import('./template-store.base').TemplateStore, usage: object, taskRun: object, result: object, history: object }} */
+  const out = {
+    task: taskMem,
+    memory: memMem,
+    memoryAsset,
+    template: templateCanon,
+    usage,
+    settings,
+    featureFlag,
+    taskRun,
+    result,
+    history
+  };
 
   switch (mode) {
     case "memory":
       out.task = taskMem;
       out.memory = memMem;
-      out.template = tplMem;
+      out.memoryAsset = createMemoryAssetStore("memory", dir);
+      out.template = createTemplateCanonicalStore("memory", dir);
+           out.usage = createUsageStore("memory", dir);
+      out.settings = createSettingsStore("memory", dir);
+      out.featureFlag = createFeatureFlagStore("memory", dir);
+      out.taskRun = createTaskRunStore("memory", taskRunPath);
+      out.result = createResultStore("memory", resultsPath);
+      out.history = createHistoryStore("memory", historyPath);
       break;
-    case "local":
+    case "local_only":
       out.task = taskLocal;
       out.memory = memLocal;
-      out.template = tplLocal;
+      out.memoryAsset = createMemoryAssetStore("local_only", dir);
+      out.template = createTemplateCanonicalStore("local_only", dir);
+      out.usage = createUsageStore("local_only", dir);
+      out.settings = createSettingsStore("local_only", dir);
+      out.featureFlag = createFeatureFlagStore("local_only", dir);
+      out.taskRun = createTaskRunStore("local_only", taskRunPath);
+      out.result = createResultStore("local_only", resultsPath);
+      out.history = createHistoryStore("local_only", historyPath);
       break;
     case "cloud_primary":
-      out.task = taskCloud;
-      out.memory = memCloud;
-      out.template = tplCloud;
+      if (isSupabaseConfigured()) {
+        out.task = taskCloud;
+        out.memory = memCloud;
+        out.memoryAsset = createMemoryAssetStore("cloud_primary", dir);
+        out.template = createTemplateCanonicalStore("cloud_primary", dir);
+        out.usage = createUsageStore("cloud_primary", dir);
+        out.settings = createSettingsStore("cloud_primary", dir);
+        out.featureFlag = createFeatureFlagStore("cloud_primary", dir);
+        out.taskRun = createTaskRunStore("cloud_primary", taskRunPath);
+        out.result = createResultStore("cloud_primary", resultsPath);
+        out.history = createHistoryStore("cloud_primary", historyPath);
+      } else {
+        out.task = taskLocal;
+        out.memory = memLocal;
+        out.memoryAsset = createMemoryAssetStore("local_only", dir);
+        out.template = createTemplateCanonicalStore("local_only", dir);
+        out.usage = createUsageStore("local_only", dir);
+        out.settings = createSettingsStore("local_only", dir);
+        out.featureFlag = createFeatureFlagStore("local_only", dir);
+        out.taskRun = createTaskRunStore("local_only", taskRunPath);
+        out.result = createResultStore("local_only", resultsPath);
+        out.history = createHistoryStore("local_only", historyPath);
+      }
       break;
     case "dual_write":
-      out.task = new DualWriteTaskStore(taskLocal, taskCloud);
-      out.memory = memCloud;
-      out.template = tplCloud;
+      if (isSupabaseConfigured()) {
+        out.task = new DualWriteTaskStore(taskLocal, taskCloud);
+        out.memory = memCloud;
+        out.memoryAsset = createMemoryAssetStore("dual_write", dir);
+        out.template = createTemplateCanonicalStore("dual_write", dir);
+        out.usage = createUsageStore("dual_write", dir);
+        out.settings = createSettingsStore("dual_write", dir);
+        out.featureFlag = createFeatureFlagStore("dual_write", dir);
+        out.taskRun = createTaskRunStore("dual_write", taskRunPath);
+        out.result = createResultStore("dual_write", resultsPath);
+        out.history = createHistoryStore("dual_write", historyPath);
+      } else {
+        out.task = taskLocal;
+        out.memory = memLocal;
+        out.memoryAsset = createMemoryAssetStore("local_only", dir);
+        out.template = createTemplateCanonicalStore("local_only", dir);
+        out.usage = createUsageStore("local_only", dir);
+        out.settings = createSettingsStore("local_only", dir);
+        out.featureFlag = createFeatureFlagStore("local_only", dir);
+        out.taskRun = createTaskRunStore("local_only", taskRunPath);
+        out.result = createResultStore("local_only", resultsPath);
+        out.history = createHistoryStore("local_only", historyPath);
+      }
       break;
     default:
       out.task = taskLocal;
       out.memory = memLocal;
-      out.template = tplLocal;
+      out.memoryAsset = createMemoryAssetStore("local_only", dir);
+      out.template = createTemplateCanonicalStore("local_only", dir);
+      out.usage = createUsageStore("local_only", dir);
+      out.settings = createSettingsStore("local_only", dir);
+      out.featureFlag = createFeatureFlagStore("local_only", dir);
+      out.taskRun = createTaskRunStore("local_only", taskRunPath);
+      out.result = createResultStore("local_only", resultsPath);
+      out.history = createHistoryStore("local_only", historyPath);
   }
 
   return out;
+}
+
+/** @deprecated 使用 config().domainStorageMode */
+function resolveDomainMode(raw) {
+  const m = (raw || "").toLowerCase();
+  if (m === "stub_supabase") return isSupabaseConfigured() ? "cloud_primary" : "memory";
+  return m;
 }
 
 module.exports = { createDomainStores, resolveDomainMode, localStoreDir };

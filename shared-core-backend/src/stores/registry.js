@@ -23,8 +23,37 @@ function getMemoryDomainStore() {
   return getDomainStores().memory;
 }
 
+/** AICS 资产 Memory（pattern / 可复用沉淀） */
+function getMemoryAssetStore() {
+  return getDomainStores().memoryAsset;
+}
+
 function getTemplateStore() {
   return getDomainStores().template;
+}
+
+function getTaskRunStore() {
+  return getDomainStores().taskRun;
+}
+
+function getResultStore() {
+  return getDomainStores().result;
+}
+
+function getHistoryStore() {
+  return getDomainStores().history;
+}
+
+function getUsageStore() {
+  return getDomainStores().usage;
+}
+
+function getSettingsStore() {
+  return getDomainStores().settings;
+}
+
+function getFeatureFlagStore() {
+  return getDomainStores().featureFlag;
 }
 
 module.exports = {
@@ -32,5 +61,12 @@ module.exports = {
   getDomainStores,
   getTaskStore,
   getMemoryDomainStore,
-  getTemplateStore
+  getMemoryAssetStore,
+  getTemplateStore,
+  getTaskRunStore,
+  getResultStore,
+  getHistoryStore,
+  getUsageStore,
+  getSettingsStore,
+  getFeatureFlagStore
 };

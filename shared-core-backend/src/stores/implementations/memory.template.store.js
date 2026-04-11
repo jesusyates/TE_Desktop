@@ -31,6 +31,9 @@ class MemoryTemplateStore extends TemplateStore {
       scope: norm.scope,
       title: norm.title,
       body: norm.body,
+      market: norm.market,
+      locale: norm.locale,
+      product: norm.product,
       createdAt: norm.created_at,
       updatedAt: norm.updated_at
     };
@@ -41,6 +44,9 @@ class MemoryTemplateStore extends TemplateStore {
       scope: row.scope,
       title: row.title,
       body: row.body,
+      market: row.market,
+      locale: row.locale,
+      product: row.product,
       created_at: row.createdAt,
       updated_at: row.updatedAt
     });

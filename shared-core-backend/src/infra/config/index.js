@@ -26,6 +26,19 @@ function resolveStorageMode() {
   return "dual_write";
 }
 
+/**
+ * 领域存储模式：local_only | dual_write | cloud_primary（+ memory 测试）。
+ *兼容历史别名：local → local_only
+ */
+function normalizeDomainStorageMode(raw) {
+  const m = (raw || "").toLowerCase();
+  if (m === "memory") return "memory";
+  if (m === "local" || m === "local_only") return "local_only";
+  if (m === "dual_write") return "dual_write";
+  if (m === "cloud_primary" || m === "stub_supabase") return "cloud_primary";
+  return "dual_write";
+}
+
 function getConfig() {
   const nodeEnv = readEnv("NODE_ENV", "development");
   const port = readInt("PORT", 4000);
@@ -47,6 +60,9 @@ function getConfig() {
           : "legacy";
   }
 
+  const storageModeRaw = storageMode;
+  const domainStorageMode = normalizeDomainStorageMode(storageModeRaw);
+
   return Object.freeze({
     nodeEnv,
     port,
@@ -62,19 +78,38 @@ function getConfig() {
 
     openaiApiKey: readEnv("OPENAI_API_KEY", ""),
 
+    /** AI Router 最小接入（模型名仅来自 env） */
+    aiProviderDefault: readEnv("AI_PROVIDER_DEFAULT", "openai"),
+    aiModelDefault: readEnv("AI_MODEL_DEFAULT", "gpt-4o-mini"),
+    aiTimeoutMs: readInt("AI_TIMEOUT_MS", 60_000),
+    aiMaxPromptChars: readInt("AI_MAX_PROMPT_CHARS", 32_000),
+
+    /** 新 entitlement 默认 token 上限（仅新建行；SQLite/memory insert同步） */
+    quotaDefaultTokens: readInt("QUOTA_DEFAULT_TOKENS", 100_000),
+    /** 估算成本：每 1K tokens 计价单位（0=不计费） */
+    usageCostPer1kTokens: parseFloat(readEnv("USAGE_COST_PER_1K_TOKENS", "0")) || 0,
+
+    /** Feature flag 默认值（对象）；市场覆盖见 featureFlagsByMarket */
+    featureFlagDefaults: {},
+    featureFlagsByMarket: {},
+
     jwtSecret: readEnv("JWT_SECRET", readEnv("SHARED_CORE_AUTH_SECRET", "")),
 
     allowedOrigins: parseAllowedOrigins(readEnv("ALLOWED_ORIGINS", "")),
 
     /** 为 "1" 时 CORS 仅信任 ALLOWED_ORIGINS，不自动放行 Electron/null/localhost（桌面联调勿开） */
-    corsStrict: readEnv("CORS_STRICT", "0") === "1",
+    /** 生产默认仅允许 ALLOWED_ORIGINS；开发默认宽松（Electron/null/localhost） */
+    corsStrict: readEnv("CORS_STRICT", nodeEnv === "production" ? "1" : "0") === "1",
 
     defaultMarket: readEnv("DEFAULT_MARKET", "global"),
     defaultLocale: readEnv("DEFAULT_LOCALE", "en-US"),
     defaultProduct: readEnv("DEFAULT_CLIENT_PRODUCT", ""),
     defaultPlatform: readEnv("DEFAULT_CLIENT_PLATFORM", ""),
 
-    storageMode,
+    /** 原始 env（含 local / memory 等历史值） */
+    storageMode: storageModeRaw,
+    /** 归一后领域模式 */
+    domainStorageMode,
 
     trustProxy: readEnv("TRUST_PROXY", nodeEnv === "production" ? "1" : "0"),
     jsonBodyLimit: readEnv("JSON_BODY_LIMIT", "2mb"),
@@ -82,6 +117,10 @@ function getConfig() {
 
     rateLimitWindowMs: readInt("RATE_LIMIT_WINDOW_MS", 60_000),
     rateLimitMax: readInt("RATE_LIMIT_MAX", 10_000),
+
+    /** 连续 AI 提供商失败次数上限，超过则短暂 mock */
+    aiFailureStreakMax: readInt("AI_FAILURE_STREAK_MAX", 3),
+    aiFailureDegradeMs: readInt("AI_FAILURE_DEGRADE_MS", 120_000),
 
     backendRoot,
     logsDir: path.join(backendRoot, "logs"),
@@ -95,4 +134,4 @@ function config() {
   return _cached;
 }
 
-module.exports = { config, getConfig, readEnv, parseAllowedOrigins };
+module.exports = { config, getConfig, readEnv, parseAllowedOrigins, normalizeDomainStorageMode };

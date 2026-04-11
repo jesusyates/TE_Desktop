@@ -38,6 +38,9 @@ class SupabaseTemplateStore extends TemplateStore {
       scope: norm.scope,
       title: norm.title,
       body: norm.body,
+      market: norm.market,
+      locale: norm.locale,
+      product: norm.product,
       created_at: norm.created_at,
       updated_at: norm.updated_at
     };

@@ -30,7 +30,8 @@ function resolveModeFromEnv() {
   if (m === "memory" || m === "stub_supabase" || process.env.SHARED_CORE_STORAGE === "memory") {
     return "memory";
   }
-  if (m === "local" || m === "dual_write" || m === "cloud_primary") return "local";
+  if (m === "local" || m === "local_only" || m === "dual_write" || m === "cloud_primary")
+    return "local";
   return "local";
 }
 

@@ -46,8 +46,10 @@ export const AccountPage = () => {
   const locale = useAuthStore((s) => s.locale);
   const accountProfileSnapshot = useAuthStore((s) => s.accountProfileSnapshot);
   const accountEntitlement = useAuthStore((s) => s.accountEntitlement);
-  const accountPageRevalidating = useAuthStore((s) => s.accountPageRevalidating);
-  const revalidateAccountPageData = useAuthStore((s) => s.revalidateAccountPageData);
+  const accountProfileRefreshing = useAuthStore((s) => s.accountProfileRefreshing);
+  const accountEntitlementRevalidating = useAuthStore((s) => s.accountEntitlementRevalidating);
+  const refreshAccountProfile = useAuthStore((s) => s.refreshAccountProfile);
+  const revalidateAccountEntitlement = useAuthStore((s) => s.revalidateAccountEntitlement);
 
   const me = useMemo((): MeUser | null => {
     if (!hydrated) return null;
@@ -76,9 +78,17 @@ export const AccountPage = () => {
     return null;
   }, [hydrated, accountProfileSnapshot, userId, userEmail, market, locale]);
 
+  /** 仅刷新配额/套餐（新鲜度由 store 控制）；不因进入页面拉 /me */
   useEffect(() => {
-    void revalidateAccountPageData({ force: false });
-  }, [revalidateAccountPageData]);
+    void revalidateAccountEntitlement({ force: false });
+  }, [revalidateAccountEntitlement]);
+
+  /** 本地尚无身份快照时静默补全一次（不展示身份区「同步中」） */
+  useEffect(() => {
+    if (!hydrated || !userId.trim()) return;
+    if (accountProfileSnapshot != null) return;
+    void refreshAccountProfile({ silent: true });
+  }, [hydrated, userId, accountProfileSnapshot, refreshAccountProfile]);
 
   useLayoutEffect(() => {
     const id = location.hash.replace(/^#/, "").trim();
@@ -103,18 +113,14 @@ export const AccountPage = () => {
         </h2>
         <Card title={u.settings.userCard}>
           <div className="account-identity-toolbar">
-            {accountPageRevalidating ? (
-              <span className="account-identity-toolbar__status text-muted text-sm">{u.settings.accountSyncing}</span>
-            ) : (
-              <span className="account-identity-toolbar__status" aria-hidden />
-            )}
             <Button
               variant="secondary"
               type="button"
-              disabled={accountPageRevalidating}
-              onClick={() => void revalidateAccountPageData({ force: true })}
+              disabled={accountProfileRefreshing}
+              aria-busy={accountProfileRefreshing}
+              onClick={() => void refreshAccountProfile({ silent: false })}
             >
-              {u.settings.accountRefresh}
+              {accountProfileRefreshing ? u.settings.accountSyncing : u.settings.accountRefresh}
             </Button>
           </div>
           {me ? (
@@ -196,8 +202,8 @@ export const AccountPage = () => {
         </h2>
         <p className="settings-section__lead text-muted mb-2">{u.settings.billingFoot}</p>
         <Card title={u.settings.billingCard}>
-          {accountPageRevalidating && accountEntitlement ? (
-            <p className="text-muted text-sm mb-2">{u.settings.accountSyncing}</p>
+          {accountEntitlementRevalidating && !accountEntitlement ? (
+            <p className="text-muted text-sm mb-0">{u.settings.loading}</p>
           ) : null}
           {accountEntitlement ? (
             <div className="detail-list">
@@ -224,9 +230,7 @@ export const AccountPage = () => {
                 </span>
               </div>
             </div>
-          ) : accountPageRevalidating ? (
-            <p className="text-muted text-sm mb-0">{u.settings.accountSyncing}</p>
-          ) : (
+          ) : accountEntitlementRevalidating ? null : (
             <p className="auto-placeholder">{u.settings.entErr}</p>
           )}
           <p className="text-muted text-sm mt-3 mb-0">{u.console.usageRechargeSoon}</p>

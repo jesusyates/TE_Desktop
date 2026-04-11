@@ -56,6 +56,9 @@ class LocalJsonlTaskStore extends TaskStore {
       title: norm.title,
       status: norm.status,
       payload: norm.payload,
+      market: norm.market,
+      locale: norm.locale,
+      product: norm.product,
       created_at: norm.created_at,
       updated_at: norm.updated_at
     };

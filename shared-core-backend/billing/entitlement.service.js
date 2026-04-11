@@ -28,6 +28,24 @@ function applyUsage(user_id, product, action, amount, usageMeta = {}) {
   if (r.ok) {
     const ts = new Date().toISOString();
     billingLog({ event: "usage_recorded", user_id, product, amount: amt, timestamp: ts });
+    setImmediate(() => {
+      try {
+        const {
+          scheduleEntitlementCloudMirror
+        } = require("../src/stores/account/entitlement.store");
+        scheduleEntitlementCloudMirror(user_id, product, null);
+      } catch (e) {
+        const { logStorageDiff } = require("../src/infra/logging/storageDiffLogger");
+        logStorageDiff({
+          userId: user_id,
+          entity: "entitlement",
+          operation: "sync",
+          localSuccess: true,
+          cloudSuccess: false,
+          error: e
+        });
+      }
+    });
   }
   return r;
 }

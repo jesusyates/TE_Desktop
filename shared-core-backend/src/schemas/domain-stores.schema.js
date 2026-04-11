@@ -1,6 +1,8 @@
 /**
  * Domain store 写入前规范化（禁止在 service 内拼装 DB 形状）。
  */
+const { getStorageDimensions } = require("../infra/context-dimensions");
+
 function userKey(ctx) {
   const uid = ctx && ctx.userId;
   return uid && String(uid).trim() !== "" ? String(uid).trim() : "anonymous";
@@ -49,11 +51,15 @@ function normalizeTaskForCreate(ctx, payload) {
   const status = normalizeTaskStatus(p.status);
   delete p.title;
   delete p.status;
+  const dim = getStorageDimensions(ctx);
   return {
     user_id: uid,
     title,
     status,
     payload: p,
+    market: dim.market,
+    locale: dim.locale,
+    product: dim.product,
     created_at: nowIso(),
     updated_at: nowIso()
   };
@@ -166,6 +172,12 @@ function normalizeTaskRow(row) {
     title: row.title,
     status: row.status,
     ...p,
+    market:
+      row.market != null ? String(row.market) : p.market != null ? String(p.market) : undefined,
+    locale:
+      row.locale != null ? String(row.locale) : p.locale != null ? String(p.locale) : undefined,
+    product:
+      row.product != null ? String(row.product) : p.product != null ? String(p.product) : undefined,
     createdAt: row.created_at != null ? row.created_at : row.createdAt,
     updatedAt: row.updated_at != null ? row.updated_at : row.updatedAt
   };
@@ -201,6 +213,7 @@ function normalizeMemoryEntryRow(row) {
 
 function normalizeTemplateForCreate(ctx, payload) {
   const uid = userKey(ctx);
+  const dim = getStorageDimensions(ctx);
   const title = payload && payload.title != null ? String(payload.title).slice(0, 500) : "untitled";
   const scope = payload && payload.scope === "global" ? "global" : "user";
   const body =
@@ -217,6 +230,9 @@ function normalizeTemplateForCreate(ctx, payload) {
     scope,
     title,
     body,
+    market: dim.market,
+    locale: dim.locale,
+    product: dim.product,
     created_at: nowIso(),
     updated_at: nowIso()
   };
@@ -230,6 +246,9 @@ function normalizeTemplateRow(row) {
     scope: row.scope || "user",
     title: row.title,
     body: row.body,
+    market: row.market != null ? String(row.market) : undefined,
+    locale: row.locale != null ? String(row.locale) : undefined,
+    product: row.product != null ? String(row.product) : undefined,
     createdAt: row.created_at != null ? row.created_at : row.createdAt,
     updatedAt: row.updated_at != null ? row.updated_at : row.updatedAt
   };

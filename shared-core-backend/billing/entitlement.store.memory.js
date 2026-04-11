@@ -3,6 +3,16 @@
  */
 const usageStore = require("./usage.store.memory");
 
+function defaultQuotaTokens() {
+  try {
+    const { config } = require("../src/infra/config");
+    const n = config().quotaDefaultTokens;
+    return Number.isFinite(n) && n > 0 ? n : 100_000;
+  } catch {
+    return 100_000;
+  }
+}
+
 /** @type {Map<string, object>} */
 const byKey = new Map();
 
@@ -13,13 +23,16 @@ function keyOf(user_id, product) {
 function getOrCreate(user_id, product) {
   const k = keyOf(user_id, product);
   if (!byKey.has(k)) {
+    const now = new Date().toISOString();
     byKey.set(k, {
       user_id,
       product,
       plan: "free",
-      quota: 100,
+      quota: defaultQuotaTokens(),
       used: 0,
-      status: "active"
+      status: "active",
+      created_at: now,
+      updated_at: now
     });
   }
   return byKey.get(k);
@@ -38,6 +51,7 @@ function atomicConsume(user_id, product, action, amount, meta = {}) {
   }
   ent.used += amount;
   const ts = new Date().toISOString();
+  ent.updated_at = ts;
   const m = meta || {};
   usageStore.append({
     user_id,

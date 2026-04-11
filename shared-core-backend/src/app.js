@@ -43,10 +43,18 @@ function createApp() {
       "X-Product",
       "X-Client-Preference-Market",
       "X-Client-Preference-Locale",
+      "X-Aics-User-Id",
+      "X-Aics-Client-Id",
+      "X-Aics-Session-Token",
       "Access-Control-Request-Method",
       "Access-Control-Request-Headers"
     ],
-    exposedHeaders: ["X-Session-Refresh-Recommended", "Deprecation", "Link", "X-API-Compat-Deprecated"],
+    exposedHeaders: [
+      "X-Session-Refresh-Recommended",
+      "Deprecation",
+      "Link",
+      "X-API-Compat-Deprecated"
+    ],
     credentials: false,
     optionsSuccessStatus: 204,
     maxAge: 86400

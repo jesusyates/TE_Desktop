@@ -32,7 +32,7 @@ export type AccountProfileSnapshot = {
   createdAt?: string;
 };
 
-/** 配额 / 套餐等易变信息（后台静默刷新） */
+/** 配额 / 套餐等易变信息（账户页按需刷新，与身份展示解耦） */
 export type AccountBillingEntitlement = {
   user_id: string;
   product: string;
@@ -42,7 +42,8 @@ export type AccountBillingEntitlement = {
   status: string;
 };
 
-const ACCOUNT_DATA_STALE_MS = 5 * 60 * 1000;
+/** 仅用于计费/配额拉取的新鲜度窗口 */
+const ACCOUNT_ENTITLEMENT_STALE_MS = 5 * 60 * 1000;
 
 function emptyAccountPageCache() {
   return {
@@ -50,7 +51,8 @@ function emptyAccountPageCache() {
     accountProfileFetchedAt: 0,
     accountEntitlement: null as AccountBillingEntitlement | null,
     accountEntitlementFetchedAt: 0,
-    accountPageRevalidating: false
+    accountProfileRefreshing: false,
+    accountEntitlementRevalidating: false
   };
 }
 
@@ -71,14 +73,21 @@ type AuthState = {
   accountProfileFetchedAt: number;
   accountEntitlement: AccountBillingEntitlement | null;
   accountEntitlementFetchedAt: number;
-  /** 账户页后台拉取 /me 或 entitlement 时轻量 UI用 */
-  accountPageRevalidating: boolean;
+  /** 用户点击「刷新资料」拉 /me 时，仅用于按钮级态 */
+  accountProfileRefreshing: boolean;
+  /** 账户页拉取 entitlement 时，仅影响配额区 */
+  accountEntitlementRevalidating: boolean;
   /** MODULE C-3：冷启动读 vault → /auth/me 校验后再置 true */
   hydrate: () => Promise<void>;
   /** 将 /v1/auth/me 成功体合并进会话与账户快照 */
   mergeAuthMeSuccess: (me: AuthMeSuccessBody) => void;
-  /** 账户页：store 优先，必要时静默拉取；`force` 跳过新鲜度窗口 */
-  revalidateAccountPageData: (options?: { force?: boolean }) => Promise<void>;
+  /**
+   * 拉取并合并身份信息。`silent: true` 时不置 `accountProfileRefreshing`（用于本地无快照时补全，不打扰身份区）。
+   * 用户手动刷新、资料保存成功后应传默认 `silent: false`。
+   */
+  refreshAccountProfile: (options?: { silent?: boolean }) => Promise<void>;
+  /** 仅刷新计费/配额；进入账户页可调用；`force` 跳过新鲜度 */
+  revalidateAccountEntitlement: (options?: { force?: boolean }) => Promise<void>;
   setTokens: (
     access: string,
     refresh: string,
@@ -106,7 +115,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   accountProfileFetchedAt: 0,
   accountEntitlement: null,
   accountEntitlementFetchedAt: 0,
-  accountPageRevalidating: false,
+  accountProfileRefreshing: false,
+  accountEntitlementRevalidating: false,
 
   mergeAuthMeSuccess: (me) => {
     const u = me.user;
@@ -133,63 +143,51 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  revalidateAccountPageData: async (options) => {
+  refreshAccountProfile: async (options) => {
+    const silent = options?.silent === true;
+    const st = get();
+    if (!st.accessToken.trim() || !st.userId.trim()) return;
+    if (!silent) set({ accountProfileRefreshing: true });
+    try {
+      const me = await fetchAuthMeValidated();
+      get().mergeAuthMeSuccess(me);
+      const m = me.user.market;
+      const l = me.user.locale;
+      if (m && l && !isDisplayLocaleUserLocked()) {
+        get().setSessionLocale(m, l);
+      }
+    } catch {
+      /* 保留已有快照 */
+    } finally {
+      if (!silent) set({ accountProfileRefreshing: false });
+    }
+  },
+
+  revalidateAccountEntitlement: async (options) => {
     const force = options?.force === true;
     const st = get();
     if (!st.accessToken.trim() || !st.userId.trim()) return;
 
     const now = Date.now();
-    const profileStale =
-      force ||
-      !st.accountProfileSnapshot ||
-      st.accountProfileSnapshot.userId !== st.userId ||
-      now - st.accountProfileFetchedAt >= ACCOUNT_DATA_STALE_MS;
     const entStale =
       force ||
       !st.accountEntitlement ||
-      now - st.accountEntitlementFetchedAt >= ACCOUNT_DATA_STALE_MS;
+      now - st.accountEntitlementFetchedAt >= ACCOUNT_ENTITLEMENT_STALE_MS;
 
-    if (!profileStale && !entStale) return;
+    if (!entStale) return;
 
-    set({ accountPageRevalidating: true });
+    set({ accountEntitlementRevalidating: true });
     try {
-      const tasks: Promise<void>[] = [];
-      if (profileStale) {
-        tasks.push(
-          (async () => {
-            try {
-              const me = await fetchAuthMeValidated();
-              get().mergeAuthMeSuccess(me);
-              const m = me.user.market;
-              const l = me.user.locale;
-              if (m && l && !isDisplayLocaleUserLocked()) {
-                get().setSessionLocale(m, l);
-              }
-            } catch {
-              /* 保留已有快照与界面 */
-            }
-          })()
-        );
-      }
-      if (entStale) {
-        tasks.push(
-          (async () => {
-            try {
-              const { apiClient } = await import("../services/apiClient");
-              const r = await apiClient.get<AccountBillingEntitlement>("/billing/entitlement");
-              set({
-                accountEntitlement: r.data,
-                accountEntitlementFetchedAt: Date.now()
-              });
-            } catch {
-              /* 保留已有 entitlement */
-            }
-          })()
-        );
-      }
-      await Promise.all(tasks);
+      const { apiClient } = await import("../services/apiClient");
+      const r = await apiClient.get<AccountBillingEntitlement>("/billing/entitlement");
+      set({
+        accountEntitlement: r.data,
+        accountEntitlementFetchedAt: Date.now()
+      });
+    } catch {
+      /* 保留已有 entitlement */
     } finally {
-      set({ accountPageRevalidating: false });
+      set({ accountEntitlementRevalidating: false });
     }
   },
 

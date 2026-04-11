@@ -12,6 +12,7 @@ function errorMiddleware(err, req, res, _next) {
   const isProd = c.nodeEnv === "production";
 
   if (err && err.type === "entity.parse.failed") {
+    res.locals.aicsErrorCode = "INVALID_BODY";
     logger.warn({ event: "body_parse_error", requestId, route: req.originalUrl, error: err.message });
     return res.status(400).json({
       success: false,
@@ -22,6 +23,7 @@ function errorMiddleware(err, req, res, _next) {
   }
 
   if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    res.locals.aicsErrorCode = "INVALID_JSON";
     logger.warn({ event: "invalid_json", requestId, route: req.originalUrl, error: err.message });
     return res.status(400).json({
       success: false,
@@ -32,6 +34,7 @@ function errorMiddleware(err, req, res, _next) {
   }
 
   if (err && err.message === "Not allowed by CORS") {
+    res.locals.aicsErrorCode = "CORS_BLOCKED";
     const origin = req.headers && req.headers.origin;
     logger.warn({
       event: "cors_blocked",
@@ -56,12 +59,21 @@ function errorMiddleware(err, req, res, _next) {
   }
 
   if (err instanceof AppError) {
+    res.locals.aicsErrorCode = err.code;
+    const ctx = req.context || {};
     logger.warn({
       event: "app_error",
       requestId,
+      userId: ctx.userId ?? null,
       route: req.originalUrl,
+      method: (req.method || "GET").toUpperCase(),
+      platform: ctx.platform ?? null,
+      market: ctx.market ?? null,
+      locale: ctx.locale ?? null,
       error: err.message,
-      code: err.code
+      code: err.code,
+      errorCode: err.code,
+      result: "failure"
     });
     return res.status(err.statusCode).json({
       success: false,
@@ -71,6 +83,7 @@ function errorMiddleware(err, req, res, _next) {
     });
   }
 
+  res.locals.aicsErrorCode = "INTERNAL_ERROR";
   const internal = err && err.message ? err.message : String(err);
   logger.error({
     event: "unhandled_error",
@@ -88,4 +101,7 @@ function errorMiddleware(err, req, res, _next) {
   });
 }
 
-module.exports = { errorMiddleware };
+/** @alias 文档与施工清单命名 */
+const errorHandlerMiddleware = errorMiddleware;
+
+module.exports = { errorMiddleware, errorHandlerMiddleware };

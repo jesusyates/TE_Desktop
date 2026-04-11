@@ -25,4 +25,9 @@ function pickHeader(req, name) {
   return Array.isArray(v) ? v[0] : v;
 }
 
-module.exports = { unifiedContextMiddleware, pickHeader };
+module.exports = {
+  unifiedContextMiddleware,
+  /** @alias 文档与施工清单命名 */
+  requestContextMiddleware: unifiedContextMiddleware,
+  pickHeader
+};

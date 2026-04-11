@@ -55,6 +55,7 @@ function resolveSession(req) {
         product: meta.product,
         client_platform: meta.client_platform
       };
+      req.sessionAuthSource = "bearer";
       return req.session;
     }
   }
@@ -79,6 +80,7 @@ function resolveSession(req) {
           product: meta.product,
           client_platform: meta.client_platform
         };
+        req.sessionAuthSource = "dev-header";
         return req.session;
       }
       const userRaw = authRepository.findUserById(uid);
@@ -92,6 +94,7 @@ function resolveSession(req) {
           product: meta.product,
           client_platform: meta.client_platform
         };
+        req.sessionAuthSource = "dev-header";
         return req.session;
       }
     }
@@ -142,6 +145,7 @@ async function resolveSessionAsync(req) {
     product: meta.product,
     client_platform: meta.client_platform
   };
+  req.sessionAuthSource = "bearer";
   return req.session;
 }
 

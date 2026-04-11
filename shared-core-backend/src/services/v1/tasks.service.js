@@ -1,5 +1,6 @@
 const { getTaskStore } = require("../../stores/registry");
 const { denormalizeRowToStoreShape, mergeTaskPatchFromBody, normalizeTaskStatus } = require("../../schemas/domain-stores.schema");
+const { AppError } = require("../../utils/AppError");
 
 async function listTasks(ctx) {
   return getTaskStore().list(ctx, {});
@@ -8,6 +9,25 @@ async function listTasks(ctx) {
 async function createTaskFromRequest(ctx, body) {
   const b = body && typeof body === "object" ? body : {};
   return getTaskStore().create(ctx, b);
+}
+
+/**
+ * 执行链入口：仅 prompt创建最小任务（Controller v1 / run）。
+ * @param {import('express').Request['context']} ctx
+ * @param {object} body
+ */
+async function createTaskFromPrompt(ctx, body) {
+  const b = body && typeof body === "object" ? body : {};
+  const prompt = b.prompt != null ? String(b.prompt).trim() : "";
+  if (!prompt) {
+    throw new AppError("VALIDATION_ERROR", "prompt is required", 400);
+  }
+  return getTaskStore().create(ctx, {
+    title: prompt.slice(0, 500),
+    oneLinePrompt: prompt,
+    input: { oneLinePrompt: prompt, importedMaterials: [] },
+    status: "pending"
+  });
 }
 
 async function getTaskById(ctx, id) {
@@ -56,6 +76,7 @@ async function rerunTask(ctx, sourceId) {
 module.exports = {
   listTasks,
   createTaskFromRequest,
+  createTaskFromPrompt,
   getTaskById,
   patchTask,
   deleteTask,

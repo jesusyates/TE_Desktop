@@ -33,12 +33,9 @@ function getSupabaseAdminClient() {
  * @returns {Promise<{ ok: boolean, error?: string }>}
  */
 async function pingSupabase() {
-  const client = getSupabaseAdminClient();
-  if (!client) return { ok: false, error: "supabase_not_configured" };
   try {
-    const { error } = await client.from("v1_tasks").select("id", { head: true, count: "exact" });
-    if (error) return { ok: false, error: error.message || String(error.code || "query_failed") };
-    return { ok: true };
+    const taskAdapter = require("./adapters/task.adapter");
+    return await taskAdapter.pingHead();
   } catch (e) {
     return { ok: false, error: e.message || String(e) };
   }

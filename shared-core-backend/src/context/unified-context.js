@@ -4,8 +4,8 @@
  * 生产：客户端须带齐 X-Client-Product / X-Client-Platform（/v1 另有中间件强校验）。
  * 开发：若缺少且配置了 DEFAULT_CLIENT_PRODUCT / DEFAULT_CLIENT_PLATFORM 则兜底；否则保持 null。
  */
-const { randomUUID } = require("crypto");
 const { config } = require("../infra/config");
+const { createRequestId } = require("../infra/requestId");
 const { resolveSessionAsync } = require("../../auth/session.middleware");
 
 function pickHeader(req, name) {
@@ -31,10 +31,12 @@ function resolveClientIp(req) {
  */
 function createEmptyContext() {
   return {
-    requestId: randomUUID(),
+    requestId: createRequestId(),
     userId: null,
     clientId: null,
     sessionToken: null,
+    /**开发/审计：x-aics-session-token原文（不落日志明文策略由 logger 负责） */
+    aicsSessionToken: null,
     platform: null,
     product: null,
     market: null,
@@ -43,6 +45,9 @@ function createEmptyContext() {
     ip: "",
     userAgent: null,
     entitlement: null,
+    /** @type {'bearer'|'dev-header'|'anonymous'|null} */
+    authSource: null,
+    receivedAt: null,
     /** @internal 计费中间件等仍可写 req.entitlement，finalize 时同步 */
     _sessionResolved: false
   };
@@ -50,11 +55,22 @@ function createEmptyContext() {
 
 function normalizeContext(req, ctx) {
   const c = config();
-  const clientIdRaw = pickHeader(req, "x-client-id");
+  ctx.receivedAt = new Date().toISOString();
+
+  const clientPrimary = pickHeader(req, "x-client-id");
+  const clientAics = pickHeader(req, "x-aics-client-id");
+  const clientIdRaw =
+    clientPrimary != null && String(clientPrimary).trim() !== ""
+      ? clientPrimary
+      : clientAics;
   ctx.clientId =
     clientIdRaw != null && String(clientIdRaw).trim() !== ""
       ? String(clientIdRaw).trim()
       : `anon-${ctx.requestId.slice(0, 8)}`;
+
+  const stHdr = pickHeader(req, "x-aics-session-token");
+  ctx.aicsSessionToken =
+    stHdr != null && String(stHdr).trim() !== "" ? String(stHdr).trim() : null;
 
   ctx.sessionToken = parseBearerToken(pickHeader(req, "authorization"));
   ctx.ip = resolveClientIp(req);
@@ -79,12 +95,16 @@ function normalizeContext(req, ctx) {
 
 async function applySessionToContext(req, ctx) {
   await resolveSessionAsync(req);
-  if (!req.session || typeof req.session !== "object") return;
+  if (!req.session || typeof req.session !== "object") {
+    ctx.authSource = "anonymous";
+    return;
+  }
   ctx.userId = req.session.user_id;
   ctx.market = req.session.market;
   ctx.locale = req.session.locale;
   ctx.product = req.session.product;
   ctx.platform = req.session.client_platform;
+  ctx.authSource = req.sessionAuthSource || "bearer";
   ctx._sessionResolved = true;
 }
 

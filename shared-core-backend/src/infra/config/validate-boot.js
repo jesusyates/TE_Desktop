@@ -3,7 +3,14 @@
  */
 const { config } = require("./index");
 
-const ALLOWED_STORAGE = new Set(["memory", "local", "dual_write", "cloud_primary", "stub_supabase"]);
+const ALLOWED_STORAGE = new Set([
+  "memory",
+  "local",
+  "local_only",
+  "dual_write",
+  "cloud_primary",
+  "stub_supabase"
+]);
 
 function validateBoot() {
   const c = config();
@@ -29,7 +36,8 @@ function validateBoot() {
     errors.push(`STORAGE_MODE must be one of: ${[...ALLOWED_STORAGE].join(", ")}`);
   }
 
-  const needsSupabase = c.storageMode === "cloud_primary" || c.storageMode === "dual_write";
+  const needsSupabase =
+    c.domainStorageMode === "cloud_primary" || c.domainStorageMode === "dual_write";
   if (c.nodeEnv === "production" && needsSupabase) {
     if (!c.supabaseUrl || !c.supabaseServiceRoleKey) {
       errors.push("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required when STORAGE_MODE is cloud_primary or dual_write");
