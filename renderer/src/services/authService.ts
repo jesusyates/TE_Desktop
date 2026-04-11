@@ -11,9 +11,10 @@ import {
   forgotPasswordRequest,
   resetPasswordRequest,
   resetPasswordWithRecoveryToken,
-  fetchAuthMe
+  fetchAuthMeValidated
 } from "./authApi";
 import { useAuthStore } from "../store/authStore";
+import { isDisplayLocaleUserLocked } from "./displayLocale";
 
 async function applyAuthSessionEnvelope(res: AuthSessionEnvelope): Promise<void> {
   if (!res.token?.trim() || !res.user?.userId) {
@@ -25,12 +26,22 @@ async function applyAuthSessionEnvelope(res: AuthSessionEnvelope): Promise<void>
     userId: res.user.userId,
     userEmail: res.user.email
   });
-  try {
-    const me = await fetchAuthMe();
-    store.setSessionLocale(me.user.market, me.user.locale);
-  } catch {
-    /* 市场/语言保持 store 既有默认即可 */
-  }
+  /** 不与进入主界面串行：`/auth/me` 写入账户快照并补齐 market/locale，后台执行 */
+  void (async () => {
+    try {
+      const me = await fetchAuthMeValidated();
+      useAuthStore.getState().mergeAuthMeSuccess(me);
+      if (!isDisplayLocaleUserLocked()) {
+        const m = me.user.market;
+        const l = me.user.locale;
+        if (m && l) {
+          useAuthStore.getState().setSessionLocale(m, l);
+        }
+      }
+    } catch {
+      /* 保持已有显示语言与市场 */
+    }
+  })();
 }
 
 /** 登录成功后将 token、refresh（若有）、user 写入 store，并尽力拉取 /auth/me */

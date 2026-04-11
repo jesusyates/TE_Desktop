@@ -20,11 +20,14 @@ function loadEnvFile(filePath, override) {
 }
 
 function bootstrapEnv() {
+  /** 先载入 .env，便于文件内声明 NODE_ENV=production（对齐服务器，勿在加载前写死 development） */
+  loadEnvFile(path.join(backendRoot, ".env"), false);
   const nodeEnv = process.env.NODE_ENV || "development";
   process.env.NODE_ENV = nodeEnv;
 
-  loadEnvFile(path.join(backendRoot, ".env"), false);
   loadEnvFile(path.join(backendRoot, `.env.${nodeEnv}`), true);
+  /** 本地覆盖（密钥、对齐变量）；不提交仓库 */
+  loadEnvFile(path.join(backendRoot, ".env.local"), true);
   loadEnvFile(path.join(repoRoot, ".env"), false);
 
   if (process.env.JWT_SECRET && !process.env.SHARED_CORE_AUTH_SECRET) {

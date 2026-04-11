@@ -11,6 +11,11 @@ function preferenceLog(payload) {
     timestamp: payload.timestamp || new Date().toISOString(),
     source_system: "shared-core-preferences"
   };
+  if (payload && typeof payload === "object") {
+    if (payload.reason != null) rec.reason = String(payload.reason);
+    if (payload.errorMessage != null) rec.errorMessage = String(payload.errorMessage);
+    if (payload.stack != null) rec.stack = String(payload.stack).slice(0, 2000);
+  }
   console.log(JSON.stringify(rec));
 }
 

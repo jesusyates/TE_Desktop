@@ -14,6 +14,7 @@ shared-core-backend/storage/*.sqlite
 shared-core-backend/storage/*.sqlite-*
 
 .env.*
+!shared-core-backend/.env.local.example
 logs/
 build/
 

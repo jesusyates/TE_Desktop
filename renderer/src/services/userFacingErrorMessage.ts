@@ -173,6 +173,11 @@ function normalizeTechnicalMessage(raw: string): string {
     return "网关响应异常，请稍后再试。";
   }
 
+  // 业务常量码（大写蛇形）：不向用户展示原文
+  if (/^[A-Z][A-Z0-9_]*$/.test(t) && t.length <= 80) {
+    return USER_FACING_ERROR_FALLBACK;
+  }
+
   // 纯蛇形/常量码短串：不向用户展示实现细节
   if (/^[a-z][a-z0-9_]+$/.test(t) && t.length <= 64 && !/\s/.test(t)) {
     return USER_FACING_ERROR_FALLBACK;

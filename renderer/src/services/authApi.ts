@@ -1,13 +1,16 @@
-import axios, { isAxiosError } from "axios";
+import axios, { isAxiosError, type InternalAxiosRequestConfig } from "axios";
 import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { CLIENT_VERSION } from "../config/clientVersion";
 import { clientSession } from "./clientSession";
 import { normalizeV1ResponseBody } from "./v1Envelope";
 import { logAxiosFailure } from "./apiErrorLog";
 import {
+  attachAuthHttpContext,
+  buildAuthFullUrl,
   logAuthHttpRequest,
   logAuthHttpResponseError,
-  logAuthHttpResponseSuccess
+  logAuthHttpResponseSuccess,
+  throwAuthHttpContextError
 } from "./authHttpDebug";
 
 const baseURL = SHARED_CORE_BASE_URL;
@@ -104,42 +107,28 @@ function isAuthSessionSuccess(data: unknown): data is AuthSessionEnvelope {
   return typeof user.userId === "string" && Boolean(String(user.userId).trim()) && typeof user.email === "string";
 }
 
+function mkAuthCodeError(): Error & { authCode?: string } {
+  return new Error("") as Error & { authCode?: string };
+}
+
+/** UI 走 i18n；禁止把业务 code 或英文技术句塞进 Error.message */
 function throwAuthErrorFromResponseData(data: unknown): void {
   if (!data || typeof data !== "object") return;
   const d = data as Record<string, unknown>;
   const msg =
     typeof d.message === "string" && d.message.trim() ? d.message.trim() : "";
+
   /** `/v1/auth/*` 错误体常为 `FORBIDDEN` + 文案，映射未验证邮箱 */
   if (
     d.code === "FORBIDDEN" &&
     msg &&
     (/验证|verification|verify/i.test(msg) || msg.includes("邮箱"))
   ) {
-    const err = new Error(msg) as Error & { authCode?: string };
+    const err = mkAuthCodeError();
     err.authCode = "EMAIL_NOT_VERIFIED";
     throw err;
   }
-  if (d.code === "EMAIL_NOT_VERIFIED") {
-    const err = new Error(msg || "EMAIL_NOT_VERIFIED") as Error & { authCode?: string };
-    err.authCode = "EMAIL_NOT_VERIFIED";
-    throw err;
-  }
-  if (d.code === "INVALID_CREDENTIALS") {
-    const err = new Error("邮箱或密码错误") as Error & { authCode?: string };
-    err.authCode = "INVALID_CREDENTIALS";
-    throw err;
-  }
-  if (d.code === "TOO_MANY_REQUESTS" || d.code === "TOO_MANY_ATTEMPTS") {
-    const code = String(d.code);
-    const err = new Error(msg || code) as Error & { authCode?: string };
-    err.authCode = code;
-    throw err;
-  }
-  if (d.code === "INVALID_EMAIL_FORMAT") {
-    const err = new Error(msg || "INVALID_EMAIL_FORMAT") as Error & { authCode?: string };
-    err.authCode = "INVALID_EMAIL_FORMAT";
-    throw err;
-  }
+
   const cooldownCode =
     d.code === "RESEND_COOLDOWN" ||
     d.code === "VERIFICATION_RESEND_COOLDOWN" ||
@@ -148,7 +137,7 @@ function throwAuthErrorFromResponseData(data: unknown): void {
     const rsRaw = d.remainingSeconds;
     const rs =
       typeof rsRaw === "number" && Number.isFinite(rsRaw) ? Math.max(0, Math.ceil(rsRaw)) : 0;
-    const err = new Error(msg || "RESEND_COOLDOWN") as Error & {
+    const err = new Error("") as Error & {
       authCode?: string;
       remainingSeconds?: number;
     };
@@ -156,6 +145,25 @@ function throwAuthErrorFromResponseData(data: unknown): void {
     err.remainingSeconds = rs;
     throw err;
   }
+
+  if (d.success === false) {
+    const err = mkAuthCodeError();
+    const c = typeof d.code === "string" && d.code.trim() ? d.code.trim() : "";
+    err.authCode = c || "UPSTREAM_ERROR";
+    throw err;
+  }
+}
+
+function throwUpstreamAuth(): never {
+  const err = mkAuthCodeError();
+  err.authCode = "UPSTREAM_ERROR";
+  throw err;
+}
+
+function throwEmailAlreadyVerifiedLogin(): never {
+  const err = mkAuthCodeError();
+  err.authCode = "EMAIL_ALREADY_VERIFIED_LOGIN";
+  throw err;
 }
 
 export async function loginRequest(email: string, password: string): Promise<AuthSessionEnvelope> {
@@ -174,14 +182,11 @@ export async function loginRequest(email: string, password: string): Promise<Aut
       throwAuthErrorFromResponseData(top);
     }
     throwAuthErrorFromResponseData(data);
-    const msg = readLoginFailureMessage(data) || readLoginFailureMessage(top) || "无法完成登录，请稍后重试。";
-    throw new Error(msg);
+    throwUpstreamAuth();
   } catch (e) {
     if (isAxiosError(e) && e.response?.data) {
-      const rd = e.response.data;
-      throwAuthErrorFromResponseData(rd);
-      const msg = readLoginFailureMessage(rd);
-      if (msg) throw new Error(msg);
+      throwAuthErrorFromResponseData(e.response.data);
+      throwUpstreamAuth();
     }
     throw e;
   }
@@ -210,7 +215,7 @@ export type RegisterUnverifiedExistingError = Error & {
 };
 
 function throwRegisterUnverifiedExisting(emailNorm: string): never {
-  const err = new Error("EMAIL_ALREADY_EXISTS_UNVERIFIED") as RegisterUnverifiedExistingError;
+  const err = new Error("") as RegisterUnverifiedExistingError;
   err.authCode = "EMAIL_ALREADY_EXISTS_UNVERIFIED";
   err.registerEmail = emailNorm.trim();
   throw err;
@@ -227,18 +232,44 @@ export function isRegisterUnverifiedExistingError(e: unknown): e is RegisterUnve
   );
 }
 
+export type RegisterVerifiedExistingError = Error & { authCode: "EMAIL_ALREADY_EXISTS_VERIFIED" };
+
+function throwRegisterVerifiedExisting(): never {
+  const err = new Error("") as RegisterVerifiedExistingError;
+  err.authCode = "EMAIL_ALREADY_EXISTS_VERIFIED";
+  throw err;
+}
+
+export function isRegisterVerifiedExistingError(e: unknown): e is RegisterVerifiedExistingError {
+  return (
+    e instanceof Error &&
+    "authCode" in e &&
+    (e as Error & { authCode?: string }).authCode === "EMAIL_ALREADY_EXISTS_VERIFIED"
+  );
+}
+
 export type RegisterResult = RegisterPendingEnvelope;
+
+function registerFailureContext(status: number, config: InternalAxiosRequestConfig, raw: unknown) {
+  return {
+    status,
+    requestUrl: buildAuthFullUrl(config),
+    method: String(config.method ?? "POST").toUpperCase(),
+    responseBody: raw
+  };
+}
 
 export async function registerRequest(email: string, password: string): Promise<RegisterResult> {
   const emailNorm = email.trim().toLowerCase();
   try {
     const market = await clientSession.getMarket();
     const locale = await clientSession.getLocale();
-    const { status, data: raw } = await authApiClient.post<unknown>(
+    const res = await authApiClient.post<unknown>(
       `${AUTH_V1}/register`,
       { email, password, market, locale },
       { validateStatus: () => true }
     );
+    const { status, data: raw, config } = res;
     const data = normalizeV1ResponseBody(raw);
 
     if (status === 201 && isRegisterPending(data)) {
@@ -247,6 +278,9 @@ export async function registerRequest(email: string, password: string): Promise<
 
     if (status === 409 && data && typeof data === "object") {
       const d = data as Record<string, unknown>;
+      if (d.code === "EMAIL_ALREADY_EXISTS" && d.emailVerified === true) {
+        throwRegisterVerifiedExisting();
+      }
       if (
         d.code === "EMAIL_ALREADY_EXISTS" &&
         d.emailVerified === false &&
@@ -261,23 +295,35 @@ export async function registerRequest(email: string, password: string): Promise<
       const reg409Msg =
         data != null && typeof data === "object" ? readLoginFailureMessage(data) : null;
       const msg409 = reg409Msg ?? "";
+      if (/已注册.*直接登录|already registered|sign in/i.test(msg409)) {
+        throwRegisterVerifiedExisting();
+      }
       if (/尚未验证|未验证|verification|verify/i.test(msg409)) {
         throwRegisterUnverifiedExisting(String(emailNorm));
       }
     }
 
     if (data && typeof data === "object") {
-      throwAuthErrorFromResponseData(data);
+      try {
+        throwAuthErrorFromResponseData(data);
+      } catch (rethrow) {
+        if (rethrow instanceof Error) {
+          attachAuthHttpContext(rethrow, registerFailureContext(status, config, raw));
+        }
+        throw rethrow;
+      }
     }
-    const regFailMsg =
-      data != null && typeof data === "object" ? readLoginFailureMessage(data) : null;
-    throw new Error(regFailMsg ?? "无法完成注册，请稍后重试。");
+    throwAuthHttpContextError("", registerFailureContext(status, config, raw));
   } catch (e) {
+    if (isRegisterVerifiedExistingError(e)) throw e;
     if (isRegisterUnverifiedExistingError(e)) throw e;
     if (isAxiosError(e) && e.response?.data) {
       const d = e.response.data;
       if (e.response.status === 409 && d && typeof d === "object") {
         const o = d as Record<string, unknown>;
+        if (o.code === "EMAIL_ALREADY_EXISTS" && o.emailVerified === true) {
+          throwRegisterVerifiedExisting();
+        }
         if (
           o.code === "EMAIL_ALREADY_EXISTS" &&
           o.emailVerified === false &&
@@ -287,13 +333,21 @@ export async function registerRequest(email: string, password: string): Promise<
           throwRegisterUnverifiedExisting(String(o.email));
         }
         const msgFlat = readLoginFailureMessage(d) || "";
+        if (/已注册.*直接登录|already registered|sign in/i.test(msgFlat)) {
+          throwRegisterVerifiedExisting();
+        }
         if (/尚未验证|未验证|verification|verify/i.test(msgFlat)) {
           throwRegisterUnverifiedExisting(String(emailNorm));
         }
       }
       throwAuthErrorFromResponseData(d);
-      const msg = readLoginFailureMessage(d);
-      if (msg) throw new Error(msg);
+      const cfg = e.config;
+      throwAuthHttpContextError("", {
+        status: e.response.status,
+        requestUrl: cfg ? buildAuthFullUrl(cfg) : `${baseURL}${AUTH_V1}/register`,
+        method: String(cfg?.method ?? "POST").toUpperCase(),
+        responseBody: d
+      });
     }
     throw e;
   }
@@ -316,34 +370,21 @@ export async function verifyEmailRequest(email: string, code: string): Promise<A
       typeof data === "object" &&
       (data as { success?: boolean }).success === true
     ) {
-      throw new Error(
-        readLoginFailureMessage(data) ||
-          (typeof (data as { message?: string }).message === "string"
-            ? (data as { message: string }).message.trim()
-            : "") ||
-          "邮箱已验证，请使用密码登录。"
-      );
+      throwEmailAlreadyVerifiedLogin();
     }
     const top = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
     if (top && top.success === false) {
       throwAuthErrorFromResponseData(top);
     }
-    const msg = readLoginFailureMessage(data) || _readTopMessage(top) || "验证失败，请稍后重试。";
-    throw new Error(msg);
+    throwAuthErrorFromResponseData(data);
+    throwUpstreamAuth();
   } catch (e) {
     if (isAxiosError(e) && e.response?.data) {
       throwAuthErrorFromResponseData(e.response.data);
-      const msg = readLoginFailureMessage(e.response.data);
-      if (msg) throw new Error(msg);
+      throwUpstreamAuth();
     }
     throw e;
   }
-}
-
-function _readTopMessage(top: Record<string, unknown> | null): string | null {
-  if (!top) return null;
-  const m = top.message;
-  return typeof m === "string" && m.trim() ? m.trim() : null;
 }
 
 /** 邮件内 magic link：`token` / `token_hash` + 可选 `type`（signup | email | magiclink） */
@@ -370,44 +411,106 @@ export async function verifyEmailWithLinkToken(
       typeof data === "object" &&
       (data as { success?: boolean }).success === true
     ) {
-      throw new Error(
-        readLoginFailureMessage(data) ||
-          (typeof (data as { message?: string }).message === "string"
-            ? (data as { message: string }).message.trim()
-            : "") ||
-          "邮箱已验证，请使用密码登录。"
-      );
+      throwEmailAlreadyVerifiedLogin();
     }
     const top = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
     if (top && top.success === false) {
       throwAuthErrorFromResponseData(top);
     }
-    const msg = readLoginFailureMessage(data) || _readTopMessage(top) || "验证失败，请稍后重试。";
-    throw new Error(msg);
+    throwAuthErrorFromResponseData(data);
+    throwUpstreamAuth();
   } catch (e) {
     if (isAxiosError(e) && e.response?.data) {
       throwAuthErrorFromResponseData(e.response.data);
-      const msg = readLoginFailureMessage(e.response.data);
-      if (msg) throw new Error(msg);
+      throwUpstreamAuth();
     }
     throw e;
   }
 }
 
+function isResendEnvelopeSuccess(status: number, raw: unknown, normalized: unknown): boolean {
+  if (status !== 200) return false;
+  if (
+    normalized &&
+    typeof normalized === "object" &&
+    (normalized as { success?: boolean }).success === true
+  ) {
+    return true;
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    if (o.success === true && o.data && typeof o.data === "object") {
+      const inner = o.data as Record<string, unknown>;
+      if (inner.success === true) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * POST /v1/auth/resend-verification — validateStatus 全放行，避免 Axios 吞掉业务体；失败带 authHttpContext 供 UI 诊断。
+ */
 export async function resendVerificationRequest(email: string): Promise<void> {
   try {
-    const { data: raw } = await authApiClient.post<unknown>(`${AUTH_V1}/resend-verification`, { email });
+    const res = await authApiClient.post<unknown>(
+      `${AUTH_V1}/resend-verification`,
+      { email },
+      { validateStatus: () => true }
+    );
+    const { status, data: raw, config } = res;
     const data = normalizeV1ResponseBody(raw);
-    if (data && typeof data === "object" && "success" in data && (data as { success?: boolean }).success === true) {
+
+    if (isResendEnvelopeSuccess(status, raw, data)) {
       return;
     }
-    const msg = readLoginFailureMessage(data) || "发送失败，请稍后重试。";
-    throw new Error(msg);
+
+    const top = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+
+    if (data && typeof data === "object") {
+      try {
+        throwAuthErrorFromResponseData(data);
+      } catch (rethrow) {
+        if (rethrow instanceof Error) {
+          attachAuthHttpContext(rethrow, {
+            status,
+            requestUrl: buildAuthFullUrl(config),
+            method: "POST",
+            responseBody: raw
+          });
+        }
+        throw rethrow;
+      }
+    }
+    if (top) {
+      try {
+        throwAuthErrorFromResponseData(top);
+      } catch (rethrow) {
+        if (rethrow instanceof Error) {
+          attachAuthHttpContext(rethrow, {
+            status,
+            requestUrl: buildAuthFullUrl(config),
+            method: "POST",
+            responseBody: raw
+          });
+        }
+        throw rethrow;
+      }
+    }
+
+    throwAuthHttpContextError("", {
+      status,
+      requestUrl: buildAuthFullUrl(config),
+      method: "POST",
+      responseBody: raw
+    });
   } catch (e) {
-    if (isAxiosError(e) && e.response?.data) {
-      throwAuthErrorFromResponseData(e.response.data);
-      const msg = readLoginFailureMessage(e.response.data);
-      if (msg) throw new Error(msg);
+    if (isAxiosError(e) && e.request && !e.response) {
+      throwAuthHttpContextError("", {
+        status: 0,
+        requestUrl: e.config ? buildAuthFullUrl(e.config) : `${baseURL}${AUTH_V1}/resend-verification`,
+        method: "POST",
+        responseBody: { axiosCode: e.code ?? null, message: e.message }
+      });
     }
     throw e;
   }
@@ -423,13 +526,12 @@ export async function forgotPasswordRequest(email: string): Promise<void> {
     if (data && typeof data === "object" && "success" in data && (data as { success?: boolean }).success === true) {
       return;
     }
-    const msg = readLoginFailureMessage(data) || "请求失败，请稍后重试。";
-    throw new Error(msg);
+    throwAuthErrorFromResponseData(data);
+    throwUpstreamAuth();
   } catch (e) {
     if (isAxiosError(e) && e.response?.data) {
       throwAuthErrorFromResponseData(e.response.data);
-      const msg = readLoginFailureMessage(e.response.data);
-      if (msg) throw new Error(msg);
+      throwUpstreamAuth();
     }
     throw e;
   }
@@ -464,13 +566,12 @@ export async function resetPasswordRequest(
     if (top && top.success === false) {
       throwAuthErrorFromResponseData(top);
     }
-    const msg = readLoginFailureMessage(data) || _readTopMessage(top) || "重置失败，请稍后重试。";
-    throw new Error(msg);
+    throwAuthErrorFromResponseData(data);
+    throwUpstreamAuth();
   } catch (e) {
     if (isAxiosError(e) && e.response?.data) {
       throwAuthErrorFromResponseData(e.response.data);
-      const msg = readLoginFailureMessage(e.response.data);
-      if (msg) throw new Error(msg);
+      throwUpstreamAuth();
     }
     throw e;
   }
@@ -501,13 +602,12 @@ export async function resetPasswordWithRecoveryToken(
     if (top && top.success === false) {
       throwAuthErrorFromResponseData(top);
     }
-    const msg = readLoginFailureMessage(data) || _readTopMessage(top) || "重置失败，请稍后重试。";
-    throw new Error(msg);
+    throwAuthErrorFromResponseData(data);
+    throwUpstreamAuth();
   } catch (e) {
     if (isAxiosError(e) && e.response?.data) {
       throwAuthErrorFromResponseData(e.response.data);
-      const msg = readLoginFailureMessage(e.response.data);
-      if (msg) throw new Error(msg);
+      throwUpstreamAuth();
     }
     throw e;
   }
@@ -581,8 +681,37 @@ export type AuthMeSuccessBody = {
     locale?: string;
     product?: string;
     client_platform?: string;
+    /** 后端若返回展示名 / 头像 / 注册时间，桌面端写入账户快照（均为可选） */
+    displayName?: string;
+    avatarUrl?: string;
+    createdAt?: string;
   };
 };
+
+function pickOptionalMeString(...candidates: unknown[]): string | undefined {
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+  }
+  return undefined;
+}
+
+/** 在已通过 isAuthMeSuccessBody 校验后，从原始 user 对象补齐可选字段（兼容 snake_case） */
+function enrichAuthMeUser(rawUser: Record<string, unknown>, base: AuthMeSuccessBody["user"]): AuthMeSuccessBody["user"] {
+  return {
+    ...base,
+    market: pickOptionalMeString(rawUser.market, base.market),
+    locale: pickOptionalMeString(rawUser.locale, base.locale),
+    product: pickOptionalMeString(rawUser.product, base.product),
+    client_platform: pickOptionalMeString(
+      rawUser.client_platform,
+      rawUser.clientPlatform,
+      base.client_platform
+    ),
+    displayName: pickOptionalMeString(rawUser.displayName, rawUser.display_name, rawUser.name),
+    avatarUrl: pickOptionalMeString(rawUser.avatarUrl, rawUser.avatar_url, rawUser.avatar),
+    createdAt: pickOptionalMeString(rawUser.createdAt, rawUser.created_at)
+  };
+}
 
 function isAuthMeSuccessBody(data: unknown): data is AuthMeSuccessBody {
   if (!data || typeof data !== "object") return false;
@@ -616,7 +745,11 @@ export async function fetchAuthMeValidated(): Promise<AuthMeSuccessBody> {
     const data = normalizeV1ResponseBody(raw);
 
     if (status === 200 && isAuthMeSuccessBody(data)) {
-      return data;
+      const rawUser = data.user as unknown as Record<string, unknown>;
+      return {
+        success: true,
+        user: enrichAuthMeUser(rawUser, data.user)
+      };
     }
 
     const rawCode =
@@ -662,7 +795,17 @@ export async function fetchAuthMeValidated(): Promise<AuthMeSuccessBody> {
  * MODULE C-2/C-3：须在 vault 已有 access 之后调用；返回 legacy `user_id` 形状以兼容既有调用方。
  */
 export async function fetchAuthMe(): Promise<{
-  user: { user_id: string; email: string; market: string; locale: string; product?: string; client_platform?: string };
+  user: {
+    user_id: string;
+    email: string;
+    market: string;
+    locale: string;
+    product?: string;
+    client_platform?: string;
+    displayName?: string;
+    avatarUrl?: string;
+    createdAt?: string;
+  };
 }> {
   const r = await fetchAuthMeValidated();
   return {
@@ -672,7 +815,10 @@ export async function fetchAuthMe(): Promise<{
       market: r.user.market ?? "cn",
       locale: r.user.locale ?? "zh-CN",
       ...(r.user.product != null ? { product: r.user.product } : {}),
-      ...(r.user.client_platform != null ? { client_platform: r.user.client_platform } : {})
+      ...(r.user.client_platform != null ? { client_platform: r.user.client_platform } : {}),
+      ...(r.user.displayName != null ? { displayName: r.user.displayName } : {}),
+      ...(r.user.avatarUrl != null ? { avatarUrl: r.user.avatarUrl } : {}),
+      ...(r.user.createdAt != null ? { createdAt: r.user.createdAt } : {})
     }
   };
 }

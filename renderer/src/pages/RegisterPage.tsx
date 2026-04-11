@@ -1,25 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { isAxiosError } from "axios";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { registerAccountOnly } from "../services/authService";
-import { isRegisterUnverifiedExistingError } from "../services/authApi";
-import { formatLoginErrorWithDiagnostics } from "../services/loginErrorMessage";
+import {
+  isRegisterUnverifiedExistingError,
+  isRegisterVerifiedExistingError
+} from "../services/authApi";
+import { buildAuthFlowErrorStrings, formatLoginErrorMessage } from "../services/loginErrorMessage";
 import { isValidEmailFormat, normalizeEmailInput } from "../modules/auth/authValidation";
-import { getSharedCoreBaseUrlDebugInfo, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { buildVerifyEmailUrl } from "../services/authVerificationFlow";
 import { setLastLoginEmail } from "../services/lastLoginEmail";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
+import { LoginEmailInputWithSuggest } from "../components/auth/LoginEmailInputWithSuggest";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { ContextDebugBanner } from "../components/ContextDebugBanner";
 import { AuthOauthPlaceholder } from "../components/auth/AuthOauthPlaceholder";
+import { AuthPublicShellHeader } from "../components/auth/AuthPublicShellHeader";
+import { runAuthPublicRouteInteractionCleanup } from "../services/authInteractionCleanup";
 
 const MIN_PASSWORD = 8;
 
 export const RegisterPage = () => {
   const u = useUiStrings();
   const r = u.register;
+  const location = useLocation();
   const navigate = useNavigate();
   const accessToken = useAuthStore((s) => s.accessToken);
   const userId = useAuthStore((s) => s.userId);
@@ -35,10 +43,11 @@ export const RegisterPage = () => {
     void hydrate();
   }, [hydrate]);
 
-  useEffect(() => {
-    // eslint-disable-next-line no-console -- 必须可见实际解析的 Shared Core 基址与构建注入变量
-    console.info("[auth-runtime] Shared Core 配置快照", getSharedCoreBaseUrlDebugInfo());
-  }, []);
+  useLayoutEffect(() => {
+    runAuthPublicRouteInteractionCleanup(`register-layout:${location.pathname}`, location.pathname, {
+      focusFirstInputId: "reg-email"
+    });
+  }, [location.pathname]);
 
   useEffect(() => {
     if (accessToken.trim() && userId.trim()) navigate("/workbench", { replace: true });
@@ -68,12 +77,16 @@ export const RegisterPage = () => {
     void registerAccountOnly(em, password)
       .then(({ email: em }) => {
         setLastLoginEmail(em);
-        navigate(`/verify-email?email=${encodeURIComponent(em)}&sent=1`, { replace: true });
+        navigate(buildVerifyEmailUrl(em, { sent: true }), { replace: true });
       })
       .catch((e: unknown) => {
+        if (isRegisterVerifiedExistingError(e)) {
+          setErr(formatLoginErrorMessage(e, buildAuthFlowErrorStrings(u)));
+          return;
+        }
         if (isRegisterUnverifiedExistingError(e)) {
           setLastLoginEmail(e.registerEmail);
-          navigate(`/verify-email?email=${encodeURIComponent(e.registerEmail)}&resentHint=1`, {
+          navigate(buildVerifyEmailUrl(e.registerEmail, { resentHint: true, fromRegDup: true }), {
             replace: true
           });
           return;
@@ -91,19 +104,7 @@ export const RegisterPage = () => {
             err: e
           });
         }
-        setErr(
-          formatLoginErrorWithDiagnostics(e, {
-            errorGeneric: u.login.error,
-            errorInvalidCredentials: u.login.errorInvalidCredentials,
-            errorInvalidEmailFormat: u.login.errorInvalidEmailFormat,
-            errorNetwork: u.login.errorNetwork,
-            errorEmailNotVerified: u.login.errorEmailNotVerified,
-            errorTooManyRequests: u.login.errorTooManyRequests,
-            errorTooManyAttempts: u.login.errorTooManyAttempts,
-            resendCooldownWait: u.login.resendCooldownWait,
-            resendCooldownIn: u.login.resendCooldownIn
-          })
-        );
+        setErr(formatLoginErrorMessage(e, buildAuthFlowErrorStrings(u)));
       })
       .finally(() => setBusy(false));
   };
@@ -111,10 +112,7 @@ export const RegisterPage = () => {
   return (
     <div className="shell-root app-root login-shell">
       <section className="shell-main login-shell__main">
-        <header className="shell-header">
-          <span className="shell-header__title">{r.headerTitle}</span>
-          <span className="shell-header__meta">{u.login.headerMeta}</span>
-        </header>
+        <AuthPublicShellHeader title={r.headerTitle} meta={u.login.headerMeta} />
         <main className="workspace-container workspace-container--login">
           <div className="login-panel">
             <div className="page-stack page-narrow">
@@ -135,13 +133,20 @@ export const RegisterPage = () => {
                     <label className="form-label" htmlFor="reg-email">
                       {r.email}
                     </label>
-                    <Input
+                    <LoginEmailInputWithSuggest
                       id="reg-email"
-                      type="email"
-                      autoComplete="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={setEmail}
                       placeholder={u.login.phEmail}
+                      autoComplete="email"
+                      enableHistory={false}
+                      enableDomainSuggest={true}
+                      labels={{
+                        recentBadge: "",
+                        recommendedBadge: u.login.emailSuggestDomain,
+                        clearHistory: "",
+                        removeFromHistoryAria: ""
+                      }}
                     />
                   </div>
                   <div className="form-field">

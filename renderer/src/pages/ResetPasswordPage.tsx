@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { resetPasswordFromMailToken, resetPasswordWithCode } from "../services/authService";
-import { formatResetPasswordErrorMessage } from "../services/loginErrorMessage";
+import { buildResetPasswordErrorStrings, formatResetPasswordErrorMessage } from "../services/loginErrorMessage";
 import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { ContextDebugBanner } from "../components/ContextDebugBanner";
+import { AuthPublicShellHeader } from "../components/auth/AuthPublicShellHeader";
 import { isValidEmailFormat, normalizeEmailInput } from "../modules/auth/authValidation";
+import { runAuthPublicRouteInteractionCleanup } from "../services/authInteractionCleanup";
 
 const MIN_PASSWORD = 8;
 
@@ -39,26 +41,13 @@ export const ResetPasswordPage = () => {
     }
   }, []);
 
-  const errStrings = {
-    errorGeneric: u.login.error,
-    errorInvalidCredentials: u.login.errorInvalidCredentials,
-    errorInvalidEmailFormat: u.login.errorInvalidEmailFormat,
-    errorNetwork: u.login.errorNetwork,
-    errorEmailNotVerified: u.login.errorEmailNotVerified,
-    errorTooManyRequests: u.login.errorTooManyRequests,
-    errorTooManyAttempts: u.login.errorTooManyAttempts,
-    resendCooldownWait: u.login.resendCooldownWait,
-    resendCooldownIn: u.login.resendCooldownIn,
-    errorInvalidCode: rp.errorInvalidCode,
-    errorAlreadyVerified: rp.errorAlreadyVerified,
-    errorUserNotFound: rp.errorUserNotFound,
-    errorResendNotApplicable: rp.errorResendNotApplicable,
-    errorVerifyGeneric: rp.errorVerifyGeneric,
-    emailRequired: rp.emailRequired,
-    codeRequired: rp.codeRequired,
-    errorNewPasswordShort: rp.errorNewPasswordShort,
-    errorResetFailed: rp.errorResetFailed
-  };
+  useLayoutEffect(() => {
+    runAuthPublicRouteInteractionCleanup(`reset-password-layout:${location.pathname}`, location.pathname, {
+      focusFirstInputId: isRecoveryLink ? "rp-pass" : "rp-email"
+    });
+  }, [location.pathname, isRecoveryLink]);
+
+  const errStrings = useMemo(() => buildResetPasswordErrorStrings(u), [u]);
 
   const submit = () => {
     if (busy) return;
@@ -116,10 +105,7 @@ export const ResetPasswordPage = () => {
   return (
     <div className="shell-root app-root login-shell">
       <section className="shell-main login-shell__main">
-        <header className="shell-header">
-          <span className="shell-header__title">{rp.headerTitle}</span>
-          <span className="shell-header__meta">{u.login.headerMeta}</span>
-        </header>
+        <AuthPublicShellHeader title={rp.headerTitle} meta={u.login.headerMeta} />
         <main className="workspace-container workspace-container--login">
           <div className="login-panel">
             <div className="page-stack page-narrow">

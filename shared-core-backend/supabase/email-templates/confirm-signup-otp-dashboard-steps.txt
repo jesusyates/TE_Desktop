@@ -1,0 +1,19 @@
+Supabase Dashboard — 将「Confirm signup」邮件改为主推 6 位验证码（OTP）
+================================================================================
+
+桌面端 AICS 注册/重发/验证链路依赖：
+
+  * 注册：GoTrue POST /signup（anon）→ 由 Supabase 发确认邮件
+  * 重发：auth.resend({ type: "signup", email })
+  * 验证：verifyOtp({ type: "signup", token: 6位码, email })
+
+请在本项目 Authentication → Email Templates → 「Confirm signup」中：
+
+1. 在邮件正文显著位置加入模板变量：{{ .Token }}
+   （GoTrue 会在邮件中填入 6 位数字 OTP，与 VerifyEmailPage 输入一致。）
+
+2. 弱化或删除「请点击以下链接」作为主引导语；链接变量 {{ .ConfirmationURL }} 可保留在次要位置作兜底。
+
+3. 保存模板后，新注册与「重新发送」将使用同一封确认邮件逻辑，内容为 OTP 导向。
+
+未改模板时，邮件可能仍以确认链接为主，与应用内 OTP 页面不一致。

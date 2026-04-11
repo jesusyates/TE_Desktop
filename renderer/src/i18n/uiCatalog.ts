@@ -187,6 +187,14 @@ export const zhCN = {
       }
     ]
   },
+  /** 登录前公用：语言切换与安装引导预留（单一 locale 源：authStore + getUiStrings） */
+  authPublic: {
+    languageLabel: "界面语言",
+    localeZhCN: "简体中文",
+    localeEnUS: "English",
+    localeJaJP: "日本語（英文界面）",
+    installerLocaleNote: "安装程序已选择界面语言"
+  },
   login: {
     headerTitle: "登录",
     headerMeta: "桌面端",
@@ -220,7 +228,23 @@ export const zhCN = {
     noAccount: "还没有账号？",
     linkRegister: "注册",
     forgotPassword: "忘记密码？",
-    passwordResetSuccess: "密码已重置，请重新登录。"
+    passwordResetSuccess: "密码已重置，请重新登录。",
+    emailSuggestRecent: "最近使用",
+    emailSuggestRecommended: "推荐",
+    emailSuggestClearHistory: "清空登录邮箱历史",
+    emailSuggestRemoveAria: "从本机历史中移除",
+    emailSuggestDomain: "后缀建议"
+  },
+  /** 账号域业务码 → 用户文案（禁止 UI 直接展示 code 原文） */
+  authErrors: {
+    EMAIL_ALREADY_EXISTS_VERIFIED: "该邮箱已注册，请直接登录",
+    EMAIL_ALREADY_EXISTS_UNVERIFIED: "该邮箱已注册，但尚未完成验证，请先验证邮箱",
+    EMAIL_NOT_VERIFIED: "该账号尚未完成邮箱验证，请先输入验证码",
+    INVALID_OTP: "验证码不正确，请核对邮件或重新获取验证码。",
+    OTP_EXPIRED: "验证码已过期，请重新获取验证码。",
+    RESEND_VERIFICATION_FAILED: "重新发送验证码失败，请稍后重试。",
+    UPSTREAM_ERROR: "认证服务暂时不可用，请稍后重试。",
+    UNKNOWN_AUTH: "操作未能完成，请稍后再试。"
   },
   register: {
     headerTitle: "注册",
@@ -236,18 +260,21 @@ export const zhCN = {
     errorPasswordShort: "密码至少 8 位。",
     emailRequired: "请填写邮箱",
     linkLogin: "已有账号？去登录",
-    afterRegisterHint: "我们已向你的邮箱发送 6 位验证码，请查收。"
+    afterRegisterHint: "我们已向你的邮箱发送 6 位验证码，请查收。",
+    alreadyRegisteredLogin: "该邮箱已注册，请直接登录。"
   },
   verifyEmail: {
     headerTitle: "验证邮箱",
     pageTitle: "验证你的邮箱",
-    pageLead: "请输入发送至邮箱的 6 位验证码，验证成功后自动登录。",
+    pageLead:
+      "主流程：在下方输入邮件中的 6 位验证码；验证成功后自动登录。请勿依赖邮件链接作为主要方式（链接仅作备用）。",
     cardTitle: "验证码",
     emailLabel: "邮箱",
     codeLabel: "6 位验证码",
-    codePlaceholder: "000000",
+    codePlaceholder: "请输入验证码",
     submit: "验证并登录",
     submitting: "验证中…",
+    sendVerificationCode: "发送验证码",
     resend: "重新发送验证码",
     resendBusy: "发送中…",
     resendOk: "已重新发送，请查收。",
@@ -261,7 +288,10 @@ export const zhCN = {
     errorVerifyGeneric: "验证未能完成，请稍后重试。",
     resendUnavailable: "当前环境暂不支持重新发送，请联系支持或使用注册邮件中的验证码。",
     codeSentBanner: "验证码已发送至 {email}，请查收邮件（含垃圾邮件箱）。",
-    alreadyRegisteredUnverifiedHint: "该邮箱已注册但尚未验证，请完成邮箱验证。"
+    alreadyRegisteredUnverifiedHint: "该邮箱已注册但尚未验证，请完成邮箱验证。",
+    fromLoginBanner: "该账号需要先完成邮箱验证。请输入邮件中的验证码，或点击下方重新发送。",
+    fromRegDupBanner: "该邮箱已注册但尚未激活。可在此完成验证或重新获取验证码。",
+    errorResendVerificationFailed: "重新发送验证码失败，请稍后重试。"
   },
   forgotPassword: {
     headerTitle: "找回密码",
@@ -288,7 +318,7 @@ export const zhCN = {
     cardTitle: "新密码",
     emailLabel: "邮箱",
     codeLabel: "6 位验证码",
-    codePlaceholder: "000000",
+    codePlaceholder: "请输入验证码",
     newPassword: "新密码（至少 8 位）",
     newPasswordConfirm: "确认新密码",
     submit: "确认重设",
@@ -1027,9 +1057,14 @@ export const zhCN = {
     loading: "加载中…",
     meErr: "无法拉取会话（请确认已登录）",
     entErr: "无法拉取用量（请确认已登录且 Core 已启动）",
+    accountRefresh: "刷新资料",
+    accountSyncing: "正在同步…",
     labels: {
       userId: "用户标识",
       email: "电子邮箱",
+      displayName: "显示名称",
+      avatarUrl: "头像",
+      createdAt: "注册时间",
       marketMe: "国家 / 地区",
       localeMe: "语言",
       product: "产品",
@@ -1566,6 +1601,13 @@ export const enUS: UiCatalog = {
       }
     ]
   },
+  authPublic: {
+    languageLabel: "Language",
+    localeZhCN: "简体中文",
+    localeEnUS: "English",
+    localeJaJP: "Japanese (English UI)",
+    installerLocaleNote: "Language was set by the installer"
+  },
   login: {
     headerTitle: "Sign in",
     headerMeta: "Desktop",
@@ -1599,7 +1641,23 @@ export const enUS: UiCatalog = {
     noAccount: "No account yet?",
     linkRegister: "Create one",
     forgotPassword: "Forgot password?",
-    passwordResetSuccess: "Your password was reset. Please sign in again."
+    passwordResetSuccess: "Your password was reset. Please sign in again.",
+    emailSuggestRecent: "Recent",
+    emailSuggestRecommended: "Suggested",
+    emailSuggestClearHistory: "Clear saved sign-in emails on this device",
+    emailSuggestRemoveAria: "Remove from history",
+    emailSuggestDomain: "Suggested domain"
+  },
+  authErrors: {
+    EMAIL_ALREADY_EXISTS_VERIFIED: "This email is already registered. Please sign in.",
+    EMAIL_ALREADY_EXISTS_UNVERIFIED:
+      "This email is already registered but not yet verified. Please verify your email first.",
+    EMAIL_NOT_VERIFIED: "This account is not verified yet. Please enter the verification code first.",
+    INVALID_OTP: "That verification code is incorrect. Check your email or request a new code.",
+    OTP_EXPIRED: "That verification code has expired. Please request a new code.",
+    RESEND_VERIFICATION_FAILED: "Could not resend the code. Please try again later.",
+    UPSTREAM_ERROR: "Authentication is temporarily unavailable. Please try again later.",
+    UNKNOWN_AUTH: "Something went wrong. Please try again."
   },
   register: {
     headerTitle: "Sign up",
@@ -1615,19 +1673,22 @@ export const enUS: UiCatalog = {
     errorPasswordShort: "Use at least 8 characters.",
     emailRequired: "Email is required",
     linkLogin: "Already have an account? Sign in",
-    afterRegisterHint: "We’ve sent a 6-digit code to your inbox."
+    afterRegisterHint: "We’ve sent a 6-digit code to your inbox.",
+    alreadyRegisteredLogin: "This email is already registered. Please sign in."
   },
   verifyEmail: {
     headerTitle: "Verify email",
     pageTitle: "Verify your email",
-    pageLead: "Enter the 6-digit code we sent. You’ll be signed in after verification.",
+    pageLead:
+      "Main path: enter the 6-digit code from your email below—you’ll be signed in after verification. Don’t rely on the email link as the primary method (link is fallback only).",
     cardTitle: "Verification code",
     emailLabel: "Email",
     codeLabel: "6-digit code",
-    codePlaceholder: "000000",
+    codePlaceholder: "Enter verification code",
     submit: "Verify & sign in",
     submitting: "Verifying…",
-    resend: "Resend code",
+    sendVerificationCode: "Send verification code",
+    resend: "Resend verification code",
     resendBusy: "Sending…",
     resendOk: "Code sent again.",
     linkLogin: "Back to sign in",
@@ -1641,7 +1702,12 @@ export const enUS: UiCatalog = {
     resendUnavailable: "Resend is not available in this build. Use the code from your registration email.",
     codeSentBanner: "We’ve sent a verification code to {email}. Check your inbox (and spam).",
     alreadyRegisteredUnverifiedHint:
-      "This email is already registered but not verified yet. Please complete email verification."
+      "This email is already registered but not verified yet. Please complete email verification.",
+    fromLoginBanner:
+      "This account needs email verification first. Enter the code from your email, or resend below.",
+    fromRegDupBanner:
+      "This email is registered but not activated yet. Verify here or request a new code.",
+    errorResendVerificationFailed: "Could not resend the code. Please try again later."
   },
   forgotPassword: {
     headerTitle: "Password recovery",
@@ -1668,7 +1734,7 @@ export const enUS: UiCatalog = {
     cardTitle: "New password",
     emailLabel: "Email",
     codeLabel: "6-digit code",
-    codePlaceholder: "000000",
+    codePlaceholder: "Enter verification code",
     newPassword: "New password (min. 8 characters)",
     newPasswordConfirm: "Confirm new password",
     submit: "Reset password",
@@ -2418,9 +2484,14 @@ export const enUS: UiCatalog = {
     loading: "Loading…",
     meErr: "Could not load session (are you signed in?)",
     entErr: "Could not load usage (is Core running?)",
+    accountRefresh: "Refresh profile",
+    accountSyncing: "Syncing…",
     labels: {
       userId: "user_id",
       email: "email",
+      displayName: "Display name",
+      avatarUrl: "Avatar",
+      createdAt: "Member since",
       marketMe: "Country / region",
       localeMe: "Language",
       product: "product",

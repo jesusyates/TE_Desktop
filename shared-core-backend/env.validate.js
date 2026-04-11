@@ -1,5 +1,6 @@
 /**
  * 生产环境邮件相关：避免启动后才发现无法发信。
+ * AUTH_PROVIDER=supabase 时：验证/邀请等邮件由 Supabase Auth 侧配置（控制台 SMTP / 托管），**不要求** Core 配置 AUTH_SMTP_*。
  */
 function isProd() {
   return String(process.env.NODE_ENV || "").toLowerCase() === "production";
@@ -7,6 +8,11 @@ function isProd() {
 
 function assertProductionMailConfig() {
   if (!isProd()) return;
+
+  const { config } = require("./src/infra/config");
+  if (config().authProvider === "supabase") {
+    return;
+  }
 
   const sink = String(process.env.AUTH_MAIL_SINK || "").trim().toLowerCase();
   if (sink === "console" || sink === "mock" || sink === "none") {

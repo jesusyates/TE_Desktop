@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { sendPasswordResetCode } from "../services/authService";
-import { formatLoginErrorMessage, getResendCooldownSecondsFromError } from "../services/loginErrorMessage";
+import {
+  buildAuthFlowErrorStrings,
+  formatLoginErrorMessage,
+  getResendCooldownSecondsFromError
+} from "../services/loginErrorMessage";
 import { isValidEmailFormat, normalizeEmailInput } from "../modules/auth/authValidation";
 import { AUTH_RESEND_COOLDOWN_SECONDS, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { Button } from "../components/ui/Button";
@@ -9,10 +13,13 @@ import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { ContextDebugBanner } from "../components/ContextDebugBanner";
+import { AuthPublicShellHeader } from "../components/auth/AuthPublicShellHeader";
+import { runAuthPublicRouteInteractionCleanup } from "../services/authInteractionCleanup";
 
 export const ForgotPasswordPage = () => {
   const u = useUiStrings();
   const f = u.forgotPassword;
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const emailQ = searchParams.get("email")?.trim() ?? "";
@@ -27,17 +34,7 @@ export const ForgotPasswordPage = () => {
   const [resendBusy, setResendBusy] = useState(false);
   const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
 
-  const errStrings = {
-    errorGeneric: u.login.error,
-    errorInvalidCredentials: u.login.errorInvalidCredentials,
-    errorInvalidEmailFormat: u.login.errorInvalidEmailFormat,
-    errorNetwork: u.login.errorNetwork,
-    errorEmailNotVerified: u.login.errorEmailNotVerified,
-    errorTooManyRequests: u.login.errorTooManyRequests,
-    errorTooManyAttempts: u.login.errorTooManyAttempts,
-    resendCooldownWait: u.login.resendCooldownWait,
-    resendCooldownIn: u.login.resendCooldownIn
-  };
+  const errStrings = buildAuthFlowErrorStrings(u);
 
   const applyResendCooldown = (sec: number) => {
     const s = Math.max(0, Math.ceil(sec));
@@ -52,6 +49,12 @@ export const ForgotPasswordPage = () => {
     }, 1000);
     return () => clearInterval(id);
   }, [resendCountingDown]);
+
+  useLayoutEffect(() => {
+    runAuthPublicRouteInteractionCleanup(`forgot-password-layout:${location.pathname}`, location.pathname, {
+      focusFirstInputId: "fp-email"
+    });
+  }, [location.pathname]);
 
   const sendReset = () => {
     if (busy || resendBusy) return;
@@ -97,10 +100,7 @@ export const ForgotPasswordPage = () => {
   return (
     <div className="shell-root app-root login-shell">
       <section className="shell-main login-shell__main">
-        <header className="shell-header">
-          <span className="shell-header__title">{f.headerTitle}</span>
-          <span className="shell-header__meta">{u.login.headerMeta}</span>
-        </header>
+        <AuthPublicShellHeader title={f.headerTitle} meta={u.login.headerMeta} />
         <main className="workspace-container workspace-container--login">
           <div className="login-panel">
             <div className="page-stack page-narrow">

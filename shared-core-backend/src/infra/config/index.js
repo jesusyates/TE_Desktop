@@ -3,7 +3,7 @@
  */
 const path = require("path");
 const { backendRoot } = require("./bootstrap-env");
-const { parseAllowedOrigins } = require("../middlewares/cors-origin.util");
+const { parseAllowedOrigins } = require("../../middlewares/cors-origin.util");
 
 function readEnv(key, defaultValue) {
   const v = process.env[key];
@@ -21,8 +21,9 @@ function readInt(key, defaultValue) {
 function resolveStorageMode() {
   const explicit = readEnv("STORAGE_MODE", null);
   if (explicit) return explicit.toLowerCase();
+  /** 显式 SHARED_CORE_STORAGE=memory 仍为纯内存（临时测试）；未配置 STORAGE_MODE 时默认与生产主路径一致 */
   if (readEnv("SHARED_CORE_STORAGE", "") === "memory") return "memory";
-  return "local";
+  return "dual_write";
 }
 
 function getConfig() {

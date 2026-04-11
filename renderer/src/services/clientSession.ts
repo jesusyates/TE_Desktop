@@ -2,7 +2,7 @@
  * MODULE C-2/C-3：统一会话字段读口与令牌持久化入口。
  * - 业务与页面禁止直接读写 token 相关 sessionStorage / secureToken；一律经此模块。
  * - userId / userEmail 以 authStore 为准；冷启动时 authStore 仅在 /auth/me 成功后写入，不得仅因 vault 有串而等同已登录。
- * - 登出清 vault 仅经 `authStore.logout` / `performLogoutToLogin`，禁止页面直调 tokenService。
+ * - 登出清 vault 仅经 `authStore.logout` / `performLogoutAndQuitApp`，禁止页面直调 tokenService。
  * - 读侧通过异步导入 store 避免与 authStore 循环依赖。
  */
 

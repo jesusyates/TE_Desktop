@@ -57,4 +57,7 @@ create trigger on_auth_user_created
   for each row
   execute function public.handle_new_user();
 
+-- 若后续未为 profiles 配置合适 policy，且 handle_new_user() 的 owner 非 postgres 等特权角色，
+-- 触发器内 INSERT 可能被 RLS 拦截，导致 admin.createUser 报 Database error creating new user。
+-- 部署后请执行 004_fix_handle_new_user_rls_owner.sql（或手动 ALTER FUNCTION ... OWNER TO postgres）。
 alter table public.profiles enable row level security;

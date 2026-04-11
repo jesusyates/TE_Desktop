@@ -1,59 +1,71 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { loginWithEmailPassword } from "../services/authService";
-import { formatLoginErrorWithDiagnostics, hasAuthCode } from "../services/loginErrorMessage";
+import { buildAuthFlowErrorStrings, formatLoginErrorMessage, hasAuthCode } from "../services/loginErrorMessage";
+import {
+  runAuthPublicRouteInteractionCleanup,
+  runAuthPublicRouteMountFocusReset
+} from "../services/authInteractionCleanup";
 import { isValidEmailFormat, normalizeEmailInput } from "../modules/auth/authValidation";
-import { getSharedCoreBaseUrlDebugInfo, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { buildVerifyEmailUrl } from "../services/authVerificationFlow";
 import { getLastLoginEmail, setLastLoginEmail } from "../services/lastLoginEmail";
+import { listLoginEmailHistory, recordLoginEmailSuccess } from "../services/loginEmailHistory";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
+import { LoginEmailInputWithSuggest } from "../components/auth/LoginEmailInputWithSuggest";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { ContextDebugBanner } from "../components/ContextDebugBanner";
 import { AuthOauthPlaceholder } from "../components/auth/AuthOauthPlaceholder";
+import { AuthPublicShellHeader } from "../components/auth/AuthPublicShellHeader";
 
 export const LoginPage = () => {
   const u = useUiStrings();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const accessToken = useAuthStore((s) => s.accessToken);
   const userId = useAuthStore((s) => s.userId);
   const hydrate = useAuthStore((s) => s.hydrate);
-  const [email, setEmail] = useState(getLastLoginEmail);
+  const [email, setEmail] = useState(() => listLoginEmailHistory()[0]?.email?.trim() || getLastLoginEmail());
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [err, setErr] = useState("");
-  const [emailNotVerifiedGate, setEmailNotVerifiedGate] = useState(false);
   const [busy, setBusy] = useState(false);
   const needLoginRedirect = searchParams.get("needLogin") === "1";
   const passwordJustReset = searchParams.get("passwordReset") === "1";
 
+  const resetLoginFormInteractiveDefaults = useCallback(() => {
+    setBusy(false);
+    setErr("");
+    setPasswordVisible(false);
+  }, []);
+
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useLayoutEffect(() => {
+    resetLoginFormInteractiveDefaults();
+    runAuthPublicRouteInteractionCleanup(`login-layout:${location.pathname}`, location.pathname, {
+      focusFirstInputId: "lg-email"
+    });
+  }, [location.pathname, resetLoginFormInteractiveDefaults]);
 
   useEffect(() => {
     if (accessToken.trim() && userId.trim()) navigate("/workbench", { replace: true });
   }, [accessToken, userId, navigate]);
 
   useEffect(() => {
-    // eslint-disable-next-line no-console -- 必须可见实际解析的 Shared Core 基址与构建注入变量
-    console.info("[auth-runtime] Shared Core 配置快照", getSharedCoreBaseUrlDebugInfo());
-  }, []);
-
-  useEffect(() => {
     if (!needLoginRedirect) return;
-    const id = window.requestAnimationFrame(() => {
-      document.getElementById("lg-email")?.focus();
-    });
-    return () => window.cancelAnimationFrame(id);
+    runAuthPublicRouteMountFocusReset("lg-email");
   }, [needLoginRedirect]);
 
   const runLogin = () => {
     if (busy) return;
     setErr("");
-    setEmailNotVerifiedGate(false);
     const em = normalizeEmailInput(email);
     if (!em) {
       setErr(u.login.emailRequired);
@@ -66,31 +78,21 @@ export const LoginPage = () => {
     setBusy(true);
     void loginWithEmailPassword(em, password)
       .then(() => {
+        recordLoginEmailSuccess(em);
         setLastLoginEmail(em);
+        setBusy(false);
+        navigate("/workbench", { replace: true });
       })
       .catch((e: unknown) => {
         if (import.meta.env.DEV) {
           console.error("[login] failed", { baseURL: SHARED_CORE_BASE_URL, path: "/v1/auth/login", email: em, err: e });
         }
         if (hasAuthCode(e, "EMAIL_NOT_VERIFIED")) {
-          setEmailNotVerifiedGate(true);
-          setErr("");
+          setLastLoginEmail(em);
+          navigate(buildVerifyEmailUrl(em, { fromLogin: true }));
           return;
         }
-        setEmailNotVerifiedGate(false);
-        setErr(
-          formatLoginErrorWithDiagnostics(e, {
-            errorGeneric: u.login.error,
-            errorInvalidCredentials: u.login.errorInvalidCredentials,
-            errorInvalidEmailFormat: u.login.errorInvalidEmailFormat,
-            errorNetwork: u.login.errorNetwork,
-            errorEmailNotVerified: u.login.errorEmailNotVerified,
-            errorTooManyRequests: u.login.errorTooManyRequests,
-            errorTooManyAttempts: u.login.errorTooManyAttempts,
-            resendCooldownWait: u.login.resendCooldownWait,
-            resendCooldownIn: u.login.resendCooldownIn
-          })
-        );
+        setErr(formatLoginErrorMessage(e, buildAuthFlowErrorStrings(u)));
       })
       .finally(() => setBusy(false));
   };
@@ -98,10 +100,7 @@ export const LoginPage = () => {
   return (
     <div className="shell-root app-root login-shell">
       <section className="shell-main login-shell__main">
-        <header className="shell-header">
-          <span className="shell-header__title">{u.login.headerTitle}</span>
-          <span className="shell-header__meta">{u.login.headerMeta}</span>
-        </header>
+        <AuthPublicShellHeader title={u.login.headerTitle} meta={u.login.headerMeta} />
         <main className="workspace-container workspace-container--login">
           <div className="login-panel">
             <div className="page-stack page-narrow">
@@ -130,16 +129,17 @@ export const LoginPage = () => {
                     <label className="form-label" htmlFor="lg-email">
                       {u.login.email}
                     </label>
-                    <Input
+                    <LoginEmailInputWithSuggest
                       id="lg-email"
-                      type="email"
-                      autoComplete="username"
                       value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        setEmailNotVerifiedGate(false);
-                      }}
+                      onChange={setEmail}
                       placeholder={u.login.phEmail}
+                      labels={{
+                        recentBadge: u.login.emailSuggestRecent,
+                        recommendedBadge: u.login.emailSuggestRecommended,
+                        clearHistory: u.login.emailSuggestClearHistory,
+                        removeFromHistoryAria: u.login.emailSuggestRemoveAria
+                      }}
                     />
                   </div>
                   <div className="form-field">
@@ -170,28 +170,7 @@ export const LoginPage = () => {
                     {busy ? u.login.submitting : u.login.submit}
                   </Button>
                 </form>
-                {emailNotVerifiedGate ? (
-                  <div className="login-email-verify-callout" role="status">
-                    <p className="login-email-verify-callout__title">{u.login.emailNotVerifiedTitle}</p>
-                    <p className="login-email-verify-callout__lead">{u.login.emailNotVerifiedLead}</p>
-                    <Button
-                      type="button"
-                      disabled={busy || !email.trim()}
-                      onClick={() => {
-                        const em = email.trim();
-                        if (!em) return;
-                        navigate(`/verify-email?email=${encodeURIComponent(em)}`);
-                      }}
-                    >
-                      {u.login.goVerifyEmail}
-                    </Button>
-                    {!email.trim() ? (
-                      <p className="login-email-verify-callout__hint text-muted text-sm mb-0">
-                        {u.login.goVerifyEmailHint}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : err ? (
+                {err ? (
                   <pre
                     className="text-danger text-sm mt-2 mb-0 whitespace-pre-wrap break-words font-sans"
                     role="alert"

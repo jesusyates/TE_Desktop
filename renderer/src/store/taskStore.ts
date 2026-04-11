@@ -8,6 +8,8 @@ type TaskState = {
   setInput: (input: TaskInput) => void;
   setResult: (result: ResultPackage) => void;
   reuseTask: (id: string) => void;
+  /** 可选：登出时清空内存任务草稿（当前登出流未默认调用） */
+  resetForLogout: () => void;
 };
 
 const emptyInput: TaskInput = { oneLinePrompt: "", importedMaterials: [] };
@@ -41,7 +43,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const task = get().history.find((x) => x.id === id);
     if (!task) return;
     set({ currentInput: task.input, latestResult: createMockResult(task.input.oneLinePrompt) });
-  }
+  },
+  resetForLogout: () => set({ currentInput: emptyInput, latestResult: undefined, history: [] })
 }));
 
 export const runLocalDemoGeneration = (input: TaskInput, setResult: (r: ResultPackage) => void) => {

@@ -8,6 +8,8 @@
   "scripts": {
     "validate:boot": "node scripts/validate-boot.js",
     "start": "node src/main.js",
+    "start:backend": "node src/main.js",
+    "dev:backend": "node src/main.js",
     "dev": "cross-env NODE_ENV=development node --watch src/main.js",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop shared-core-backend",

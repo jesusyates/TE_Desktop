@@ -4,6 +4,11 @@
  */
 const { parseClientHeaders } = require("./client-meta.util");
 const { authLog } = require("./auth.log");
+const {
+  buildRegisterFailedPayload,
+  pickDevUpstreamBody,
+  buildUpstreamAuthEventPayload
+} = require("./auth-error-diagnostics.util");
 const authRate = require("./auth.rate-limit");
 const authValidation = require("./auth.validation");
 const authResendCooldown = require("./auth.resend-cooldown");
@@ -17,7 +22,8 @@ const {
 const {
   signInWithPassword,
   refreshSession,
-  adminCreateUser,
+  signUpWithPassword,
+  findAdminUserByEmail,
   getUserFromAccessToken
 } = require("../src/services/v1/supabase-auth.service");
 const { getSupabaseAdminClient } = require("../src/infra/supabase/client");
@@ -69,13 +75,14 @@ function syntheticRow(user, profile) {
   };
 }
 
-function isDuplicateUserError(msg) {
-  const s = String(msg || "").toLowerCase();
+function isDuplicateUserError(msg, errorDetail) {
+  const s = `${String(msg || "")} ${errorDetail && errorDetail.upstreamMessage ? String(errorDetail.upstreamMessage) : ""} ${errorDetail && errorDetail.upstreamCode ? String(errorDetail.upstreamCode) : ""}`.toLowerCase();
   return (
     s.includes("already") ||
     s.includes("registered") ||
     s.includes("exists") ||
     s.includes("duplicate") ||
+    s.includes("user_already") ||
     s.includes("user not allowed") ||
     s.includes("422")
   );
@@ -182,8 +189,47 @@ async function handleAuthLogin(req, body) {
       }
     };
   }
-  const profile = await getProfileByUserId(gu.user.id);
-  const urow = preferencesService.prepareUserForToken(syntheticRow(gu.user, profile));
+  const requestId = (req && req.context && req.context.requestId) || "";
+
+  let profile = null;
+  try {
+    profile = await getProfileByUserId(gu.user.id);
+  } catch (e) {
+    authLog({
+      event: "login_side_effect_failed",
+      requestId,
+      user_id: gu.user.id,
+      jti: null,
+      client_platform: meta.client_platform,
+      product: meta.product,
+      failingStep: "getProfileByUserId",
+      sqliteTable: null,
+      errorMessage: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined
+    });
+    profile = null;
+  }
+
+  let urow;
+  try {
+    urow = preferencesService.prepareUserForToken(syntheticRow(gu.user, profile));
+  } catch (e) {
+    authLog({
+      event: "login_side_effect_failed",
+      requestId,
+      user_id: gu.user.id,
+      jti: null,
+      client_platform: meta.client_platform,
+      product: meta.product,
+      failingStep: "prepareUserForToken",
+      sqliteTable: "preferences",
+      errorMessage: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined
+    });
+    const base = syntheticRow(gu.user, profile);
+    const pair = preferencesService.normalizePair(base.market, base.locale);
+    urow = { ...base, market: pair.market, locale: pair.locale };
+  }
 
   authRate.clearLoginPasswordState(ip, emailNorm);
   authLog({
@@ -209,6 +255,15 @@ async function handleAuthLogin(req, body) {
 async function handleAuthRegister(req, body) {
   const meta = parseClientHeaders(req);
   if ("error" in meta) {
+    authLog(
+      buildRegisterFailedPayload({
+        req,
+        meta: { client_platform: null, product: null },
+        emailNorm: body && body.email,
+        upstreamAction: "parseClientHeaders",
+        plainErrorMessage: meta.error
+      })
+    );
     return {
       status: 400,
       body: { success: false, message: "无法完成注册，请更新应用后重试。" }
@@ -242,11 +297,13 @@ async function handleAuthRegister(req, body) {
   const l =
     localeIn != null && String(localeIn).trim() ? String(localeIn).trim() : "en-US";
 
-  const created = await adminCreateUser(emailNorm, String(password), { market: m, locale: l });
-  if (created.error) {
-    if (isDuplicateUserError(created.error)) {
-      const probe = await signInWithPassword(emailNorm, String(password));
-      if (!probe.error && probe.access_token) {
+  /** 先查 Auth 用户：已存在则不再调用 signUp，避免重复触发验证邮件、误判为新注册成功。 */
+  const adminDup = getSupabaseAdminClient();
+  if (adminDup) {
+    const existingEarly = await findAdminUserByEmail(emailNorm);
+    if (existingEarly.user) {
+      const confirmedEarly = Boolean(existingEarly.user.email_confirmed_at);
+      if (confirmedEarly) {
         return {
           status: 409,
           body: {
@@ -257,61 +314,199 @@ async function handleAuthRegister(req, body) {
           }
         };
       }
-      if (probe.error_code === "email_not_confirmed") {
-        return {
-          status: 409,
-          body: {
-            success: false,
-            code: "EMAIL_ALREADY_EXISTS",
-            emailVerified: false,
-            email: emailNorm,
-            message: "该邮箱已注册但尚未验证，请完成邮箱验证"
-          }
-        };
-      }
       return {
         status: 409,
         body: {
           success: false,
           code: "EMAIL_ALREADY_EXISTS",
-          emailVerified: true,
-          message: "该邮箱已注册，请直接登录"
+          emailVerified: false,
+          email: emailNorm,
+          message: "该邮箱已注册但尚未验证，请完成邮箱验证"
         }
       };
     }
-    authLog({
-      event: "register_failed",
-      user_id: null,
-      jti: null,
-      client_platform: meta.client_platform,
-      product: meta.product
-    });
-    return { status: 500, body: { success: false, message: "注册失败，请稍后重试" } };
   }
 
-  const u = created.user;
-  if (!u?.id) {
-    return { status: 500, body: { success: false, message: "注册失败，请稍后重试" } };
-  }
-
-  await ensureProfileRow(u.id, u.email || emailNorm, m, l);
-
-  authLog({
-    event: "register_success",
-    user_id: u.id,
-    jti: null,
-    client_platform: meta.client_platform,
-    product: meta.product
-  });
-
-  return {
-    status: 201,
-    body: {
-      success: true,
-      needsVerification: true,
-      email: u.email || emailNorm
+  try {
+    authLog(
+      buildUpstreamAuthEventPayload("register_start", {
+        req,
+        meta,
+        emailNorm,
+        upstreamAction: "gotrue.signup"
+      })
+    );
+    /** 桌面主链：标准 signup 触发 Supabase 确认邮件（OTP 见 Dashboard 模板 {{ .Token }}），与 verifyOtp(signup) 一致。 */
+    const created = await signUpWithPassword(
+      emailNorm,
+      String(password),
+      { market: m, locale: l },
+      { requestId: (req && req.context && req.context.requestId) || "" }
+    );
+    if (created.error) {
+      if (isDuplicateUserError(created.error, created.errorDetail)) {
+        const probe = await signInWithPassword(emailNorm, String(password));
+        if (!probe.error && probe.access_token) {
+          return {
+            status: 409,
+            body: {
+              success: false,
+              code: "EMAIL_ALREADY_EXISTS",
+              emailVerified: true,
+              message: "该邮箱已注册，请直接登录"
+            }
+          };
+        }
+        if (probe.error_code === "email_not_confirmed") {
+          return {
+            status: 409,
+            body: {
+              success: false,
+              code: "EMAIL_ALREADY_EXISTS",
+              emailVerified: false,
+              email: emailNorm,
+              message: "该邮箱已注册但尚未验证，请完成邮箱验证"
+            }
+          };
+        }
+        const adminLookup = await findAdminUserByEmail(emailNorm);
+        if (adminLookup.error) {
+          authLog(
+            buildUpstreamAuthEventPayload("register_duplicate_admin_lookup_failed", {
+              req,
+              meta,
+              emailNorm,
+              upstreamAction: "admin.listUsers",
+              errorMessage: adminLookup.error
+            })
+          );
+        }
+        if (adminLookup.user) {
+          const confirmed = Boolean(adminLookup.user.email_confirmed_at);
+          if (!confirmed) {
+            return {
+              status: 409,
+              body: {
+                success: false,
+                code: "EMAIL_ALREADY_EXISTS",
+                emailVerified: false,
+                email: emailNorm,
+                message: "该邮箱已注册但尚未验证，请前往验证邮箱或重新发送验证码"
+              }
+            };
+          }
+          return {
+            status: 409,
+            body: {
+              success: false,
+              code: "EMAIL_ALREADY_EXISTS",
+              emailVerified: true,
+              message: "该邮箱已注册，请直接登录"
+            }
+          };
+        }
+        return {
+          status: 409,
+          body: {
+            success: false,
+            code: "EMAIL_ALREADY_EXISTS",
+            emailVerified: true,
+            message: "该邮箱已注册，请直接登录"
+          }
+        };
+      }
+      authLog(
+        buildRegisterFailedPayload({
+          req,
+          meta,
+          emailNorm,
+          upstreamAction: "gotrue.signup",
+          errorDetail: created.errorDetail,
+          plainErrorMessage: typeof created.error === "string" ? created.error : null
+        })
+      );
+      return {
+        status: 500,
+        body: {
+          success: false,
+          message: "注册失败，请稍后重试",
+          ...pickDevUpstreamBody(created.errorDetail, null)
+        }
+      };
     }
-  };
+
+    const u = created.user;
+    if (!u?.id) {
+      authLog(
+        buildRegisterFailedPayload({
+          req,
+          meta,
+          emailNorm,
+          upstreamAction: "gotrue.signup",
+          plainErrorMessage: "signup response missing user.id",
+          errorDetail: {
+            upstreamCode: "missing_user_id",
+            upstreamMessage: "Supabase 返回的 user 缺少 id",
+            responseBody: { hasUser: Boolean(u), userKeys: u ? Object.keys(u) : [] }
+          }
+        })
+      );
+      return {
+        status: 500,
+        body: {
+          success: false,
+          message: "注册失败，请稍后重试",
+          ...pickDevUpstreamBody(
+            {
+              upstreamCode: "missing_user_id",
+              upstreamMessage: "createUser response missing user.id"
+            },
+            null
+          )
+        }
+      };
+    }
+
+    await ensureProfileRow(u.id, u.email || emailNorm, m, l);
+
+    authLog({
+      ...buildUpstreamAuthEventPayload("register_success", {
+        req,
+        meta,
+        emailNorm,
+        upstreamAction: "gotrue.signup"
+      }),
+      user_id: u.id,
+      jti: null
+    });
+
+    return {
+      status: 201,
+      body: {
+        success: true,
+        needsVerification: true,
+        email: u.email || emailNorm
+      }
+    };
+  } catch (err) {
+    authLog(
+      buildRegisterFailedPayload({
+        req,
+        meta,
+        emailNorm,
+        upstreamAction: "register",
+        err: err instanceof Error ? err : new Error(String(err))
+      })
+    );
+    return {
+      status: 500,
+      body: {
+        success: false,
+        message: "注册失败，请稍后重试",
+        ...pickDevUpstreamBody(null, err instanceof Error ? err : new Error(String(err)))
+      }
+    };
+  }
 }
 
 async function handleAuthVerifyEmail(req, body) {
@@ -328,33 +523,56 @@ async function handleAuthVerifyEmail(req, body) {
       ? String(body.type).trim().toLowerCase()
       : "signup";
 
-  /** 邮件内 magic link：token_hash + type（signup | email） */
+  /** 备用：邮件内 magic link（token_hash）；主路径为下方 6 位 OTP。 */
   if (tokenHashRaw != null && String(tokenHashRaw).trim().length >= 8) {
     const token_hash = String(tokenHashRaw).trim();
     const otpType =
       linkType === "email" || linkType === "signup" || linkType === "magiclink" ? linkType : "signup";
+    authLog(
+      buildUpstreamAuthEventPayload("otp_verify_start", {
+        req,
+        meta,
+        emailNorm: "",
+        upstreamAction: "verifyOtp.token_hash"
+      })
+    );
     const { data, error } = await admin.auth.verifyOtp({
       token_hash,
       type: otpType
     });
     if (error || !data?.user) {
+      authLog(
+        buildUpstreamAuthEventPayload("otp_verify_failed", {
+          req,
+          meta,
+          emailNorm: "",
+          upstreamAction: "verifyOtp.token_hash",
+          supabaseError: error || { message: "verifyOtp returned no user" }
+        })
+      );
       return {
         status: 400,
         body: { success: false, code: "INVALID_VERIFICATION_TOKEN", message: "验证链接无效或已过期" }
       };
     }
     const em = data.user.email || "";
-    await ensureProfileRow(data.user.id, em, "global", "en");
+    const um = data.user.user_metadata || {};
+    const pm = um.market != null && String(um.market).trim() ? String(um.market).trim().toLowerCase() : "global";
+    const pl = um.locale != null && String(um.locale).trim() ? String(um.locale).trim() : "en-US";
+    await ensureProfileRow(data.user.id, em, pm, pl);
     const session = data.session;
     if (session && session.access_token) {
       const profile = await getProfileByUserId(data.user.id);
       const urow = preferencesService.prepareUserForToken(syntheticRow(data.user, profile));
       authLog({
-        event: "verify_email_success",
+        ...buildUpstreamAuthEventPayload("otp_verify_success", {
+          req,
+          meta,
+          emailNorm: em || "",
+          upstreamAction: "verifyOtp.token_hash"
+        }),
         user_id: urow.user_id,
-        jti: null,
-        client_platform: meta.client_platform,
-        product: meta.product
+        jti: null
       });
       return {
         status: 200,
@@ -369,11 +587,14 @@ async function handleAuthVerifyEmail(req, body) {
       };
     }
     authLog({
-      event: "verify_email_success",
+      ...buildUpstreamAuthEventPayload("otp_verify_success", {
+        req,
+        meta,
+        emailNorm: em || "",
+        upstreamAction: "verifyOtp.token_hash"
+      }),
       user_id: data.user.id,
-      jti: null,
-      client_platform: meta.client_platform,
-      product: meta.product
+      jti: null
     });
     return {
       status: 200,
@@ -399,27 +620,51 @@ async function handleAuthVerifyEmail(req, body) {
     return invalidEmailFormatBody();
   }
 
+  authLog(
+    buildUpstreamAuthEventPayload("otp_verify_start", {
+      req,
+      meta,
+      emailNorm,
+      upstreamAction: "verifyOtp.signup_otp"
+    })
+  );
+
   const { data, error } = await admin.auth.verifyOtp({
     type: "signup",
     token: String(rawCode).trim(),
     email: emailNorm
   });
   if (error || !data?.user) {
+    authLog(
+      buildUpstreamAuthEventPayload("otp_verify_failed", {
+        req,
+        meta,
+        emailNorm,
+        upstreamAction: "verifyOtp.signup_otp",
+        supabaseError: error || { message: "verifyOtp returned no user" }
+      })
+    );
     return { status: 400, body: { success: false, message: "验证码无效或已过期" } };
   }
 
-  await ensureProfileRow(data.user.id, data.user.email || emailNorm, "global", "en");
+  const vum = data.user.user_metadata || {};
+  const vm = vum.market != null && String(vum.market).trim() ? String(vum.market).trim().toLowerCase() : "global";
+  const vl = vum.locale != null && String(vum.locale).trim() ? String(vum.locale).trim() : "en-US";
+  await ensureProfileRow(data.user.id, data.user.email || emailNorm, vm, vl);
 
   const session = data.session;
   if (session && session.access_token) {
     const profile = await getProfileByUserId(data.user.id);
     const urow = preferencesService.prepareUserForToken(syntheticRow(data.user, profile));
     authLog({
-      event: "verify_email_success",
+      ...buildUpstreamAuthEventPayload("otp_verify_success", {
+        req,
+        meta,
+        emailNorm,
+        upstreamAction: "verifyOtp.signup_otp"
+      }),
       user_id: urow.user_id,
-      jti: null,
-      client_platform: meta.client_platform,
-      product: meta.product
+      jti: null
     });
     return {
       status: 200,
@@ -435,11 +680,14 @@ async function handleAuthVerifyEmail(req, body) {
   }
 
   authLog({
-    event: "verify_email_success",
+    ...buildUpstreamAuthEventPayload("otp_verify_success", {
+      req,
+      meta,
+      emailNorm,
+      upstreamAction: "verifyOtp.signup_otp"
+    }),
     user_id: data.user.id,
-    jti: null,
-    client_platform: meta.client_platform,
-    product: meta.product
+    jti: null
   });
   return {
     status: 200,
@@ -465,26 +713,69 @@ async function handleAuthResendVerification(req, body) {
   if (!authValidation.isValidEmailFormat(emailNorm)) {
     return invalidEmailFormatBody();
   }
+  authLog(
+    buildUpstreamAuthEventPayload("otp_send_start", {
+      req,
+      meta,
+      emailNorm,
+      upstreamAction: "auth.resend.signup"
+    })
+  );
   const sendIp = authRate.getClientIp(req);
   const coolLeft = authResendCooldown.getVerifyRemainingSeconds(emailNorm);
   if (coolLeft > 0) return resendCooldownResponse(coolLeft);
   if (!authRate.sendCodeAllow(sendIp, emailNorm)) return authTooManyRequests();
 
   const admin = getSupabaseAdminClient();
-  if (!admin) return { status: 500, body: { success: false, message: "发送失败，请稍后重试" } };
+  if (!admin) {
+    authLog(
+      buildUpstreamAuthEventPayload("otp_send_failed", {
+        req,
+        meta,
+        emailNorm,
+        upstreamAction: "getSupabaseAdminClient",
+        errorMessage: "supabase_admin_missing"
+      })
+    );
+    return { status: 500, body: { success: false, message: "发送失败，请稍后重试" } };
+  }
 
   const { error } = await admin.auth.resend({ type: "signup", email: emailNorm });
   if (error) {
-    authLog({
-      event: "resend_verification_failed",
-      user_id: null,
-      jti: null,
-      client_platform: meta.client_platform,
-      product: meta.product
-    });
-    return { status: 400, body: { success: false, message: "该邮箱无需重新发送验证码或发送失败" } };
+    authLog(
+      buildUpstreamAuthEventPayload("otp_send_failed", {
+        req,
+        meta,
+        emailNorm,
+        upstreamAction: "auth.resend.signup",
+        supabaseError: error
+      })
+    );
+    return {
+      status: 400,
+      body: {
+        success: false,
+        code: "RESEND_VERIFICATION_FAILED",
+        message: "该邮箱无需重新发送验证码或发送失败",
+        ...pickDevUpstreamBody(
+          {
+            upstreamCode: error.code != null ? String(error.code) : error.name != null ? String(error.name) : null,
+            upstreamMessage: error.message != null ? String(error.message) : String(error)
+          },
+          null
+        )
+      }
+    };
   }
   authResendCooldown.recordVerifySent(emailNorm);
+  authLog(
+    buildUpstreamAuthEventPayload("otp_send_success", {
+      req,
+      meta,
+      emailNorm,
+      upstreamAction: "auth.resend.signup"
+    })
+  );
   return { status: 200, body: { success: true } };
 }
 

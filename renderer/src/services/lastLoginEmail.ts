@@ -19,3 +19,12 @@ export function setLastLoginEmail(email: string): void {
     /* 无痕模式 / 配额等 */
   }
 }
+
+/** 可选：清掉上次登录邮箱缓存（按需由登出/设置流调用） */
+export function clearLastLoginEmail(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}

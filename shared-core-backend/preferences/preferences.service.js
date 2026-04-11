@@ -2,9 +2,9 @@
  * C-5 — market/locale 优先级：手动 > 账号偏好 > 本地缓存头 > Geo 提示 > JWT 载体 > global/en-US。
  * 禁止：登录后以客户端本地为权威；IP 「锁定」国家/语言；Web/Desktop 分裂 preference 逻辑。
  */
-const authRepository = require("../auth/auth.repository");
 const { normalizeMarket, isValidMarket } = require("../config/market.config");
 const { normalizeLocale, isValidLocale } = require("../config/locale.config");
+const { isAuthProviderSupabase } = require("../auth/auth-provider.util");
 const repo = require("./preferences.repository");
 const { preferenceLog } = require("./preferences.log");
 
@@ -52,6 +52,24 @@ function prepareUserForToken(user) {
     };
   }
   const { market, locale } = normalizePair(user.market, user.locale);
+
+  /**
+   * Supabase 用户仅存在于 GoTrue；本地 SQLite `preferences.user_id` FK 指向 legacy `users`，
+   * 对 Supabase UUID 做 INSERT 会 FOREIGN KEY constraint failed，不能把登录打成 500。
+   * 桌面/market 仍用 user / profile / JWT 上的 metadata，不写本地 preferences 行。
+   */
+  if (isAuthProviderSupabase()) {
+    preferenceLog({
+      event: "preference_skip_sqlite_upsert",
+      user_id: user.user_id,
+      market,
+      locale,
+      source: "supabase_no_legacy_user_row",
+      reason: "preferences_fk_users_sqlite"
+    });
+    return { ...user, market, locale };
+  }
+
   const row = {
     user_id: user.user_id,
     market,
@@ -59,7 +77,20 @@ function prepareUserForToken(user) {
     updated_at: new Date().toISOString(),
     source: "account_default"
   };
-  repo.upsert(row);
+  try {
+    repo.upsert(row);
+  } catch (e) {
+    preferenceLog({
+      event: "preference_upsert_failed",
+      user_id: user.user_id,
+      market,
+      locale,
+      source: "account_default",
+      errorMessage: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined
+    });
+    return { ...user, market, locale };
+  }
   preferenceLog({
     event: "preference_applied_on_login",
     user_id: user.user_id,

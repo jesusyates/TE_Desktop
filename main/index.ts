@@ -97,13 +97,27 @@ const createMainWindow = () => {
   const stored = uiChromeStore.get("uiTheme");
   const initialUi: "dark" | "light" = stored === "light" ? "light" : "dark";
   nativeTheme.themeSource = initialUi;
+  /**
+   * 硬验证 ②：设 AICS_ELECTRON_VERIFY_NATIVE_WINDOW=1 启动，强制系统框/不透明窗体/无透明客户区，排除「无边框+拖拽+透明」组合问题。
+   * 当前默认已是 frame:true；此 flag 显式锁死并写日志，便于与未来 frameless 实验对照。
+   */
+  const verifyNativeWindow =
+    process.env.AICS_ELECTRON_VERIFY_NATIVE_WINDOW === "1" ||
+    process.env.AICS_ELECTRON_VERIFY_NATIVE_WINDOW === "true";
+  if (verifyNativeWindow) {
+    writeMainLog("window:verify-native-window-flag", { on: true, platform: process.platform });
+  }
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 840,
     minWidth: 1120,
     minHeight: 720,
     autoHideMenuBar: true,
+    frame: true,
+    transparent: false,
+    hasShadow: true,
     backgroundColor: CHROME_BG[initialUi],
+    ...(process.platform === "win32" ? { thickFrame: true } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

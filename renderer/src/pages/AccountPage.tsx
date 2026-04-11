@@ -1,11 +1,9 @@
-import { useEffect, useLayoutEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useLayoutEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { formatPrefLocale, formatPrefMarket, getUiLangMode } from "../i18n/preferenceLabels";
 import { useAuthStore } from "../store/authStore";
-import { apiClient } from "../services/apiClient";
-import { normalizeV1ResponseBody } from "../services/v1Envelope";
-import { performLogoutToLogin } from "../services/authLogoutFlow";
+import { performLogoutAndQuitApp } from "../services/authLogoutFlow";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 
@@ -16,68 +14,71 @@ type MeUser = {
   locale: string;
   product?: string;
   client_platform?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  createdAt?: string;
 };
 
-type BillingEntitlement = {
-  user_id: string;
-  product: string;
-  plan: string;
-  quota: number;
-  used: number;
-  status: string;
-};
+function formatCreatedAt(raw: string | undefined, localeHint: string): string {
+  if (!raw?.trim()) return "";
+  const t = Date.parse(raw);
+  if (!Number.isFinite(t)) return raw.trim();
+  try {
+    return new Date(t).toLocaleDateString(localeHint || undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+  } catch {
+    return raw.trim();
+  }
+}
 
 export const AccountPage = () => {
   const u = useUiStrings();
-  const navigate = useNavigate();
   const location = useLocation();
   const authLocale = useAuthStore((s) => s.locale);
   const accountUiMode = getUiLangMode(authLocale);
-  const [me, setMe] = useState<MeUser | null>(null);
-  const [meError, setMeError] = useState("");
-  const [entitlement, setEntitlement] = useState<BillingEntitlement | null>(null);
-  const [entitlementError, setEntitlementError] = useState("");
+  const hydrated = useAuthStore((s) => s.hydrated);
+  const userId = useAuthStore((s) => s.userId);
+  const userEmail = useAuthStore((s) => s.userEmail);
+  const market = useAuthStore((s) => s.market);
+  const locale = useAuthStore((s) => s.locale);
+  const accountProfileSnapshot = useAuthStore((s) => s.accountProfileSnapshot);
+  const accountEntitlement = useAuthStore((s) => s.accountEntitlement);
+  const accountPageRevalidating = useAuthStore((s) => s.accountPageRevalidating);
+  const revalidateAccountPageData = useAuthStore((s) => s.revalidateAccountPageData);
+
+  const me = useMemo((): MeUser | null => {
+    if (!hydrated) return null;
+    const snap = accountProfileSnapshot;
+    if (snap && snap.userId === userId) {
+      return {
+        user_id: snap.userId,
+        email: snap.email,
+        market: snap.market,
+        locale: snap.locale,
+        ...(snap.product != null ? { product: snap.product } : {}),
+        ...(snap.client_platform != null ? { client_platform: snap.client_platform } : {}),
+        ...(snap.displayName != null ? { displayName: snap.displayName } : {}),
+        ...(snap.avatarUrl != null ? { avatarUrl: snap.avatarUrl } : {}),
+        ...(snap.createdAt != null ? { createdAt: snap.createdAt } : {})
+      };
+    }
+    if (userId.trim() && userEmail.trim()) {
+      return {
+        user_id: userId.trim(),
+        email: userEmail.trim(),
+        market,
+        locale
+      };
+    }
+    return null;
+  }, [hydrated, accountProfileSnapshot, userId, userEmail, market, locale]);
 
   useEffect(() => {
-    apiClient
-      .get<unknown>("/v1/auth/me", { validateStatus: () => true })
-      .then((r) => {
-        const inner = normalizeV1ResponseBody(r.data) as Record<string, unknown> | null;
-        if (
-          r.status === 200 &&
-          inner &&
-          typeof inner === "object" &&
-          inner.success === true &&
-          inner.user &&
-          typeof inner.user === "object"
-        ) {
-          const uu = inner.user as {
-            userId: string;
-            email: string;
-            market: string;
-            locale: string;
-            product?: string;
-            client_platform?: string;
-          };
-          setMe({
-            user_id: uu.userId,
-            email: uu.email,
-            market: uu.market,
-            locale: uu.locale,
-            ...(uu.product != null ? { product: uu.product } : {}),
-            ...(uu.client_platform != null ? { client_platform: uu.client_platform } : {})
-          });
-        } else setMeError(u.settings.meErr);
-      })
-      .catch(() => setMeError(u.settings.meErr));
-  }, [u.settings.meErr]);
-
-  useEffect(() => {
-    apiClient
-      .get<BillingEntitlement>("/billing/entitlement")
-      .then((r) => setEntitlement(r.data))
-      .catch(() => setEntitlementError(u.settings.entErr));
-  }, [u.settings.entErr]);
+    void revalidateAccountPageData({ force: false });
+  }, [revalidateAccountPageData]);
 
   useLayoutEffect(() => {
     const id = location.hash.replace(/^#/, "").trim();
@@ -86,6 +87,8 @@ export const AccountPage = () => {
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [location.hash, location.pathname]);
+
+  const createdLabel = formatCreatedAt(me?.createdAt, authLocale);
 
   return (
     <div className="page-stack account-hub">
@@ -99,8 +102,42 @@ export const AccountPage = () => {
           {u.settings.accountSectionIdentity}
         </h2>
         <Card title={u.settings.userCard}>
+          <div className="account-identity-toolbar">
+            {accountPageRevalidating ? (
+              <span className="account-identity-toolbar__status text-muted text-sm">{u.settings.accountSyncing}</span>
+            ) : (
+              <span className="account-identity-toolbar__status" aria-hidden />
+            )}
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={accountPageRevalidating}
+              onClick={() => void revalidateAccountPageData({ force: true })}
+            >
+              {u.settings.accountRefresh}
+            </Button>
+          </div>
           {me ? (
             <div className="detail-list">
+              {me.avatarUrl ? (
+                <div className="detail-row account-identity-avatar-row">
+                  <span className="detail-row__label">{u.settings.labels.avatarUrl}</span>
+                  <span className="detail-row__value">
+                    <img
+                      src={me.avatarUrl}
+                      alt=""
+                      className="account-identity-avatar"
+                      referrerPolicy="no-referrer"
+                    />
+                  </span>
+                </div>
+              ) : null}
+              {me.displayName ? (
+                <div className="detail-row">
+                  <span className="detail-row__label">{u.settings.labels.displayName}</span>
+                  <span className="detail-row__value">{me.displayName}</span>
+                </div>
+              ) : null}
               <div className="detail-row">
                 <span className="detail-row__label">{u.settings.labels.userId}</span>
                 <span className="detail-row__value">{me.user_id}</span>
@@ -109,6 +146,12 @@ export const AccountPage = () => {
                 <span className="detail-row__label">{u.settings.labels.email}</span>
                 <span className="detail-row__value">{me.email}</span>
               </div>
+              {createdLabel ? (
+                <div className="detail-row">
+                  <span className="detail-row__label">{u.settings.labels.createdAt}</span>
+                  <span className="detail-row__value">{createdLabel}</span>
+                </div>
+              ) : null}
               <div className="detail-row">
                 <span className="detail-row__label">{u.settings.labels.marketMe}</span>
                 <span className="detail-row__value">{formatPrefMarket(me.market, accountUiMode)}</span>
@@ -133,7 +176,7 @@ export const AccountPage = () => {
               </div>
             </div>
           ) : (
-            <p className="auto-placeholder">{meError || u.settings.loading}</p>
+            <p className="auto-placeholder">{u.settings.meErr}</p>
           )}
         </Card>
       </section>
@@ -153,33 +196,38 @@ export const AccountPage = () => {
         </h2>
         <p className="settings-section__lead text-muted mb-2">{u.settings.billingFoot}</p>
         <Card title={u.settings.billingCard}>
-          {entitlement ? (
+          {accountPageRevalidating && accountEntitlement ? (
+            <p className="text-muted text-sm mb-2">{u.settings.accountSyncing}</p>
+          ) : null}
+          {accountEntitlement ? (
             <div className="detail-list">
               <div className="detail-row">
                 <span className="detail-row__label">{u.settings.labels.plan}</span>
-                <span className="detail-row__value">{entitlement.plan}</span>
+                <span className="detail-row__value">{accountEntitlement.plan}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-row__label">{u.settings.labels.quota}</span>
-                <span className="detail-row__value">{entitlement.quota}</span>
+                <span className="detail-row__value">{accountEntitlement.quota}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-row__label">{u.settings.labels.used}</span>
-                <span className="detail-row__value">{entitlement.used}</span>
+                <span className="detail-row__value">{accountEntitlement.used}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-row__label">{u.settings.labels.status}</span>
-                <span className="detail-row__value">{entitlement.status}</span>
+                <span className="detail-row__value">{accountEntitlement.status}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-row__label">{u.settings.labels.product}</span>
                 <span className="detail-row__value">
-                  {entitlement.product === "aics" ? u.common.productAics : entitlement.product}
+                  {accountEntitlement.product === "aics" ? u.common.productAics : accountEntitlement.product}
                 </span>
               </div>
             </div>
+          ) : accountPageRevalidating ? (
+            <p className="text-muted text-sm mb-0">{u.settings.accountSyncing}</p>
           ) : (
-            <p className="auto-placeholder">{entitlementError || u.settings.loading}</p>
+            <p className="auto-placeholder">{u.settings.entErr}</p>
           )}
           <p className="text-muted text-sm mt-3 mb-0">{u.console.usageRechargeSoon}</p>
         </Card>
@@ -204,7 +252,7 @@ export const AccountPage = () => {
             variant="secondary"
             onClick={() => {
               if (!window.confirm(u.sessionUx.logoutConfirm)) return;
-              void performLogoutToLogin(navigate);
+              void performLogoutAndQuitApp();
             }}
           >
             {u.settings.logout}

@@ -1,5 +1,5 @@
 /**
- * Shared Core 进程入口 — 生产级 HTTP 栈见 src/main.js（Express + 分层 + 统一 context / 日志）。
- * 保留本路径以便 monorepo 脚本与文档：`node shared-core-backend/server.js`
+ * 兼容入口：薄包装，实际等同 `node src/main.js`。
+ * 主联调 / pm2 / 文档请以 **src/main.js** 为唯一基线；请勿在此增加第二套启动逻辑。
  */
 require("./src/main");

@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { isAuthPublicRoutePath } from "../config/authPublicRoutes";
 import { useUiStrings } from "../i18n/useUiStrings";
+import { LOGOUT_FINISHED_EVENT } from "../services/authLogoutFlow";
 
 function isLikelyUserFacingMessage(m: string): boolean {
   const t = m.trim();
@@ -12,7 +15,13 @@ function isLikelyUserFacingMessage(m: string): boolean {
 /** MODULE C-6：403 / 无清会话的权限类失败 — 全局可读提示，不清 vault。 */
 export function GlobalAuthForbiddenBanner() {
   const u = useUiStrings();
+  const { pathname } = useLocation();
+  const hideOnPublicAuth = isAuthPublicRoutePath(pathname);
   const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (hideOnPublicAuth) setMsg(null);
+  }, [hideOnPublicAuth]);
 
   useEffect(() => {
     const h = (ev: Event) => {
@@ -25,7 +34,16 @@ export function GlobalAuthForbiddenBanner() {
     return () => window.removeEventListener("aics:auth-forbidden", h);
   }, [u.auth.forbiddenOperation]);
 
-  if (!msg) return null;
+  useEffect(() => {
+    const onLogout = () => {
+      setMsg(null);
+      if (import.meta.env.DEV) console.log("[overlay]", LOGOUT_FINISHED_EVENT, "global-auth-forbidden-banner cleared");
+    };
+    window.addEventListener(LOGOUT_FINISHED_EVENT, onLogout as EventListener);
+    return () => window.removeEventListener(LOGOUT_FINISHED_EVENT, onLogout as EventListener);
+  }, []);
+
+  if (!msg || hideOnPublicAuth) return null;
   return (
     <div className="global-auth-forbidden-banner" role="alert">
       <span className="global-auth-forbidden-banner__text">{msg}</span>

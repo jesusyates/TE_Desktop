@@ -36,6 +36,7 @@ const AUTH_ERROR_CODES = new Set([
   "TOO_MANY_REQUESTS",
   "TOO_MANY_ATTEMPTS",
   "RESEND_COOLDOWN",
+  "RESEND_VERIFICATION_FAILED",
   "RATE_LIMITED",
   "INVALID_VERIFICATION_TOKEN"
 ]);
@@ -61,7 +62,26 @@ function mapLegacyAuthBodyToError(status, body) {
 function sendV1FromLegacyHandler(res, req, status, body) {
   if (status >= 400) {
     const m = mapLegacyAuthBodyToError(status, body);
-    return sendV1Failure(res, req, status, m.code, m.message);
+    const payload = {
+      success: false,
+      code: m.code,
+      message: m.message,
+      requestId: pickRequestId(req)
+    };
+    try {
+      const { config } = require("../infra/config");
+      const c = config();
+      const expose =
+        c.nodeEnv !== "production" ||
+        String(process.env.AUTH_EXPOSE_UPSTREAM_IN_RESPONSE || "").trim() === "1";
+      if (expose && body && typeof body === "object") {
+        if (body.upstreamCode != null) payload.upstreamCode = body.upstreamCode;
+        if (body.upstreamMessage != null) payload.upstreamMessage = body.upstreamMessage;
+      }
+    } catch {
+      /* ignore config load failure */
+    }
+    return res.status(status).json(payload);
   }
   return sendV1Success(res, req, body, status, null);
 }

@@ -13,6 +13,10 @@ const { signJwt, verifyJwt } = require("./jwt.util");
 const authRepository = require("./auth.repository");
 const { parseClientHeaders } = require("./client-meta.util");
 const { authLog } = require("./auth.log");
+const {
+  buildRegisterFailedPayload,
+  pickDevUpstreamBody
+} = require("./auth-error-diagnostics.util");
 const preferencesService = require("../preferences/preferences.service");
 const { getCurrentSessionVersionForIssuance } = require("./session-version.util");
 const { assertAuthMeUser } = require("../context/context-assert.util");
@@ -306,13 +310,15 @@ async function handleAuthRegister(req, body) {
   assertLegacyAuthHandlersAllowed();
   const meta = parseClientHeaders(req);
   if ("error" in meta) {
-    authLog({
-      event: "register_failed",
-      user_id: null,
-      jti: null,
-      client_platform: null,
-      product: null
-    });
+    authLog(
+      buildRegisterFailedPayload({
+        req,
+        meta: { client_platform: null, product: null },
+        emailNorm: body && body.email,
+        upstreamAction: "parseClientHeaders",
+        plainErrorMessage: meta.error
+      })
+    );
     return {
       status: 400,
       body: { success: false, message: "无法完成注册，请更新应用后重试。" }
@@ -402,15 +408,24 @@ async function handleAuthRegister(req, body) {
         localeIn != null && String(localeIn).trim() ? String(localeIn).trim() : "en-US",
       status: "pending_verification"
     });
-  } catch {
-    authLog({
-      event: "register_failed",
-      user_id: null,
-      jti: null,
-      client_platform: meta.client_platform,
-      product: meta.product
-    });
-    return { status: 500, body: { success: false, message: "注册失败，请稍后重试" } };
+  } catch (err) {
+    authLog(
+      buildRegisterFailedPayload({
+        req,
+        meta,
+        emailNorm,
+        upstreamAction: "authRepository.createUser",
+        err: err instanceof Error ? err : new Error(String(err))
+      })
+    );
+    return {
+      status: 500,
+      body: {
+        success: false,
+        message: "注册失败，请稍后重试",
+        ...pickDevUpstreamBody(null, err instanceof Error ? err : new Error(String(err)))
+      }
+    };
   }
   preferencesService.prepareUserForToken(userRaw);
   const code = emailVerification.issueCode(emailNorm);

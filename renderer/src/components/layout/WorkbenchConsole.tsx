@@ -191,30 +191,6 @@ const EMERGENCY_STOP_ACTIVE = new Set<ExecutionStatus>([
   "stopping"
 ]);
 
-/** 用户可能正在键入文本的控件（不含普通 button）— 用于避免 Esc 误触 */
-function isDomTextInputTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  if (target.closest('[contenteditable="true"]')) return true;
-  const tag = target.tagName;
-  if (tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (tag === "INPUT") {
-    const type = (target as HTMLInputElement).type?.toLowerCase() ?? "text";
-    if (
-      type === "button" ||
-      type === "submit" ||
-      type === "reset" ||
-      type === "checkbox" ||
-      type === "radio" ||
-      type === "file"
-    ) {
-      return false;
-    }
-    return true;
-  }
-  return false;
-}
-
 function buildFrozenSnapshot(
   status: ExecutionStatus,
   lastErrorMessage: string,
@@ -1908,11 +1884,8 @@ export const WorkbenchConsole = () => {
       const s = sessionRef.current;
       if (!EMERGENCY_STOP_ACTIVE.has(s.status)) return;
 
-      const inTextField = isDomTextInputTarget(e.target);
-
       if (e.key === "Escape") {
         const ctrlChord = e.ctrlKey && !e.metaKey;
-        if (!ctrlChord && inTextField) return;
         if (!ctrlChord && (e.shiftKey || e.metaKey)) return;
         e.preventDefault();
         s.emergencyStop();

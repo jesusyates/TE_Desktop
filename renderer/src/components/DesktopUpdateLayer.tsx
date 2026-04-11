@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { isAuthPublicRoutePath } from "../config/authPublicRoutes";
+import { LOGOUT_FINISHED_EVENT } from "../services/authLogoutFlow";
 import { Button } from "./ui/Button";
 import "./desktop-update-layer.css";
 
@@ -22,9 +25,15 @@ type ForcePayload = {
  */
 export const DesktopUpdateLayer = () => {
   const u = useUiStrings();
+  const { pathname } = useLocation();
+  const onAuthPublicRoute = isAuthPublicRoutePath(pathname);
   const notifiedRef = useRef(false);
   const [soft, setSoft] = useState<SoftPayload | null>(null);
   const [force, setForce] = useState<ForcePayload | null>(null);
+
+  useEffect(() => {
+    if (onAuthPublicRoute) setSoft(null);
+  }, [onAuthPublicRoute]);
 
   useEffect(() => {
     const api = window.desktopUpdate;
@@ -67,15 +76,28 @@ export const DesktopUpdateLayer = () => {
     return () => window.clearTimeout(t);
   }, [soft]);
 
+  useEffect(() => {
+    const onLogout = () => {
+      setSoft(null);
+      /* 登出后必须可点登录区；阻断门闸由主进程再次下发即可 */
+      setForce(null);
+      if (import.meta.env.DEV) console.log("[overlay]", LOGOUT_FINISHED_EVENT, "desktop-update layer cleared");
+    };
+    window.addEventListener(LOGOUT_FINISHED_EVENT, onLogout as EventListener);
+    return () => window.removeEventListener(LOGOUT_FINISHED_EVENT, onLogout as EventListener);
+  }, []);
+
   if (!window.desktopUpdate) return null;
+
+  const softToast = soft && !onAuthPublicRoute ? soft : null;
 
   return (
     <>
-      {soft ? (
+      {softToast ? (
         <div className="desktop-update-toast" role="status" aria-live="polite">
-          <strong className="block">{u.settings.updatesSoftTitle(soft.targetVersion)}</strong>
-          {soft.message ? <p className="mb-0 mt-2 text-muted">{soft.message}</p> : null}
-          {!soft.message ? <p className="mb-0 mt-2 text-muted">{u.settings.updatesSoftHint}</p> : null}
+          <strong className="block">{u.settings.updatesSoftTitle(softToast.targetVersion)}</strong>
+          {softToast.message ? <p className="mb-0 mt-2 text-muted">{softToast.message}</p> : null}
+          {!softToast.message ? <p className="mb-0 mt-2 text-muted">{u.settings.updatesSoftHint}</p> : null}
         </div>
       ) : null}
 

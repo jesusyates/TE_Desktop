@@ -70,14 +70,15 @@ export function previewBodyForLog(data: unknown, maxChars = 2000): string {
   }
 }
 
-function isAuthLoginOrRegisterPath(fullUrl: string): boolean {
-  return /\/v1\/auth\/(login|register)/i.test(fullUrl);
+/** 登录/注册/验证/重发：联调须可见完整 URL 与响应 */
+function isAuthHighSignalPath(fullUrl: string): boolean {
+  return /\/v1\/auth\/(login|register|verify-email|resend-verification)/i.test(fullUrl);
 }
 
 export function logAuthHttpRequest(config: InternalAxiosRequestConfig): void {
   const fullUrl = buildAuthFullUrl(config);
   const method = String(config.method ?? "GET").toUpperCase();
-  if (!isAuthLoginOrRegisterPath(fullUrl)) return;
+  if (!isAuthHighSignalPath(fullUrl)) return;
   // eslint-disable-next-line no-console -- 诊断用：须可见实际请求目标
   console.info("[auth-http] request", {
     baseURL: config.baseURL ?? "",
@@ -91,7 +92,7 @@ export function logAuthHttpRequest(config: InternalAxiosRequestConfig): void {
 export function logAuthHttpResponseSuccess(response: AxiosResponse): void {
   const cfg = response.config;
   const fullUrl = buildAuthFullUrl(cfg);
-  if (!isAuthLoginOrRegisterPath(fullUrl)) return;
+  if (!isAuthHighSignalPath(fullUrl)) return;
   // eslint-disable-next-line no-console -- 诊断用
   console.info("[auth-http] response", {
     fullUrl,
@@ -109,7 +110,7 @@ export function logAuthHttpResponseError(err: unknown): void {
   }
   const cfg = err.config;
   const fullUrl = cfg ? buildAuthFullUrl(cfg) : "";
-  if (fullUrl && !isAuthLoginOrRegisterPath(fullUrl)) return;
+  if (fullUrl && !isAuthHighSignalPath(fullUrl)) return;
   const method = cfg ? String(cfg.method ?? "GET").toUpperCase() : "";
   const status = err.response?.status;
   const bodyPreview = err.response?.data != null ? previewBodyForLog(err.response.data, 2000) : "";
@@ -127,34 +128,92 @@ export function logAuthHttpResponseError(err: unknown): void {
   });
 }
 
+/** 附带 HTTP 响应上下文的业务错误（validateStatus 全放行时 Axios 不抛错，须手动挂载） */
+export type AuthHttpContext = {
+  status: number;
+  requestUrl: string;
+  method: string;
+  responseBody: unknown;
+};
+
+export type ErrorWithAuthHttpContext = Error & { authHttpContext: AuthHttpContext };
+
+export function throwAuthHttpContextError(message: string, ctx: AuthHttpContext): never {
+  const err = new Error(message) as ErrorWithAuthHttpContext;
+  err.authHttpContext = ctx;
+  throw err;
+}
+
+export function attachAuthHttpContext(err: Error, ctx: AuthHttpContext): Error {
+  (err as ErrorWithAuthHttpContext).authHttpContext = ctx;
+  return err;
+}
+
+export function getAuthHttpContext(e: unknown): AuthHttpContext | null {
+  if (!e || typeof e !== "object" || !(e instanceof Error)) return null;
+  const ac = (e as ErrorWithAuthHttpContext).authHttpContext;
+  if (!ac || typeof ac !== "object") return null;
+  if (typeof (ac as AuthHttpContext).requestUrl !== "string" || typeof (ac as AuthHttpContext).status !== "number") {
+    return null;
+  }
+  return ac as AuthHttpContext;
+}
+
+function formatDiagnosticsFromAuthHttpContext(ctx: AuthHttpContext, message: string): string {
+  const body = ctx.responseBody != null ? previewBodyForLog(ctx.responseBody, 2500) : "(empty)";
+  return [
+    `request URL: ${ctx.requestUrl}`,
+    `method: ${ctx.method}`,
+    `status: ${String(ctx.status)}`,
+    `axios code: (业务层错误，非 Axios rejection；请求已由客户端完成)`,
+    `response body: ${body}`,
+    `原始异常 message: ${message || "(empty)"}`
+  ].join("\n");
+}
+
+function unwrapDiagnosticSource(e: unknown): unknown {
+  if (isAxiosError(e) || getAuthHttpContext(e)) return e;
+  if (e instanceof Error && e.cause != null) return unwrapDiagnosticSource(e.cause);
+  if (e != null && typeof e === "object" && "originalError" in e) {
+    const oe = (e as { originalError?: unknown }).originalError;
+    if (oe != null) return unwrapDiagnosticSource(oe);
+  }
+  return e;
+}
+
 /** 供登录/注册 UI 临时展示：区分无响应 / HTTP 错误 / 业务 Error */
 export function formatAuthFailureDiagnostics(e: unknown): string {
-  if (!isAxiosError(e)) {
-    const msg = e instanceof Error ? e.message : String(e);
+  const unwrapped = unwrapDiagnosticSource(e);
+  if (getAuthHttpContext(unwrapped) && unwrapped instanceof Error) {
+    return formatDiagnosticsFromAuthHttpContext(getAuthHttpContext(unwrapped)!, unwrapped.message);
+  }
+  if (!isAxiosError(unwrapped)) {
+    const msg = unwrapped instanceof Error ? unwrapped.message : String(unwrapped);
     return [`原始异常: ${msg || "(empty)"}`, "request URL: (非 Axios，无请求上下文)"].join("\n");
   }
-  const cfg = e.config;
+  const ex = unwrapped;
+  const cfg = ex.config;
   const fullUrl = cfg ? buildAuthFullUrl(cfg) : "(unknown)";
   const method = cfg ? String(cfg.method ?? "").toUpperCase() : "";
-  const status = e.response?.status;
+  const status = ex.response?.status;
   const stLabel = status != null ? String(status) : "无 HTTP 响应（多为网络失败、DNS、连接拒绝、超时或 CORS）";
   let body = "";
-  if (e.response?.data != null) {
-    body = previewBodyForLog(e.response.data, 2500);
-  } else if (e.request && !e.response) {
+  if (ex.response?.data != null) {
+    body = previewBodyForLog(ex.response.data, 2500);
+  } else if (ex.request && !ex.response) {
     body = "(无 response body：请求已发出但未见响应)";
   }
   const hint =
-    e.code === "ERR_NETWORK" || e.message === "Network Error"
+    ex.code === "ERR_NETWORK" || ex.message === "Network Error"
       ? "提示: Network Error 在桌面端常见于目标不可达、TLS 问题、或浏览器侧 CORS（Electron 对部分场景仍受限）。"
       : "";
   return [
     `request URL: ${fullUrl}`,
     `method: ${method || "?"}`,
     `status: ${stLabel}`,
-    `axios code: ${e.code ?? "(none)"}`,
+    `axios code: ${ex.code ?? "(none)"}`,
     `response body: ${body || "(empty)"}`,
-    `原始异常 message: ${e.message}`,
+    `原始异常 message: ${ex.message}`,
     hint
   ]
     .filter(Boolean)

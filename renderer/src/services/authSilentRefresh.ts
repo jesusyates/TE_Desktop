@@ -4,6 +4,7 @@
 import { useAuthStore } from "../store/authStore";
 import { readRefreshTokenFromVault } from "./clientSession";
 import { refreshRequest } from "./authApi";
+import { isDisplayLocaleUserLocked } from "./displayLocale";
 
 let inFlight: Promise<boolean> | null = null;
 
@@ -21,7 +22,9 @@ export function tryRefreshSession(): Promise<boolean> {
         userId: data.user.user_id,
         userEmail: (data.user.email || "").trim()
       });
-      useAuthStore.getState().setSessionLocale(data.user.market, data.user.locale);
+      if (!isDisplayLocaleUserLocked()) {
+        useAuthStore.getState().setSessionLocale(data.user.market, data.user.locale);
+      }
       return true;
     } catch {
       return false;

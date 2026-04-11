@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { resendVerificationEmail, verifyEmailAndSignIn, verifyEmailFromLinkToken } from "../services/authService";
-import { formatVerifyEmailErrorMessage, getResendCooldownSecondsFromError } from "../services/loginErrorMessage";
+import {
+  buildVerifyEmailErrorStrings,
+  formatVerifyEmailErrorMessage,
+  getResendCooldownSecondsFromError
+} from "../services/loginErrorMessage";
 import { AUTH_RESEND_COOLDOWN_SECONDS, AUTH_VERIFICATION_RESEND_ENABLED, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { setLastLoginEmail } from "../services/lastLoginEmail";
 import { Button } from "../components/ui/Button";
@@ -10,11 +14,34 @@ import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { ContextDebugBanner } from "../components/ContextDebugBanner";
+import { AuthPublicShellHeader } from "../components/auth/AuthPublicShellHeader";
 import { isValidEmailFormat, normalizeEmailInput } from "../modules/auth/authValidation";
+import { runAuthPublicRouteInteractionCleanup } from "../services/authInteractionCleanup";
+
+/** 验证页诊断日志（不含 token） */
+function logVerifyFlow(phase: string, detail: Record<string, unknown>): void {
+  // eslint-disable-next-line no-console -- 联调要求可观测
+  console.info(`[auth-verify-flow] ${phase}`, detail);
+}
+
+/** 仅当注册成功链携带 `sent=1`（已发过邮件）时为 true；`resentHint` 需等实际发送成功后再置位。 */
+function readVerifyHashSentOnce(): boolean {
+  try {
+    const h = window.location.hash || "";
+    const qi = h.indexOf("?");
+    if (qi < 0) return false;
+    const q = new URLSearchParams(h.slice(qi + 1));
+    return q.get("sent") === "1";
+  } catch {
+    return false;
+  }
+}
 
 export const VerifyEmailPage = () => {
   const u = useUiStrings();
   const v = u.verifyEmail;
+  const errStrings = useMemo(() => buildVerifyEmailErrorStrings(u), [u]);
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -28,9 +55,13 @@ export const VerifyEmailPage = () => {
   const [busy, setBusy] = useState(false);
   const [resendBusy, setResendBusy] = useState(false);
   const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
+  /** 是否已成功发出过至少一次验证码（含注册后 sent=1、resentHint 自动发、用户手动发送） */
+  const [hasEverSentCode, setHasEverSentCode] = useState(readVerifyHashSentOnce);
   const strippedSentRef = useRef(false);
   const resentHintFlowRef = useRef(false);
   const [fromRegisterUnverifiedHint, setFromRegisterUnverifiedHint] = useState(false);
+  const fromLoginFlow = searchParams.get("fromLogin") === "1";
+  const fromRegDupFlow = searchParams.get("fromRegDup") === "1";
 
   useEffect(() => {
     void hydrate();
@@ -41,6 +72,12 @@ export const VerifyEmailPage = () => {
       console.debug("[auth] baseURL:", SHARED_CORE_BASE_URL);
     }
   }, []);
+
+  useLayoutEffect(() => {
+    runAuthPublicRouteInteractionCleanup(`verify-email-layout:${location.pathname}`, location.pathname, {
+      focusFirstInputId: "ve-email"
+    });
+  }, [location.pathname]);
 
   useEffect(() => {
     if (emailInitial) setEmail(emailInitial);
@@ -73,21 +110,34 @@ export const VerifyEmailPage = () => {
     const em = emailInitial;
     const stripQuery = () => navigate(`/verify-email?email=${encodeURIComponent(em)}`, { replace: true });
     if (AUTH_VERIFICATION_RESEND_ENABLED) {
+      logVerifyFlow("resend_auto_start", { email: em });
+      setResendBusy(true);
+      setErr("");
       void resendVerificationEmail(em)
         .then(() => {
+          logVerifyFlow("resend_auto_success", { email: em });
+          setHasEverSentCode(true);
           setInfo(v.resendOk);
           applyResendCooldown(AUTH_RESEND_COOLDOWN_SECONDS);
         })
         .catch((e: unknown) => {
+          logVerifyFlow("resend_auto_error", {
+            email: em,
+            message: e instanceof Error ? e.message : String(e)
+          });
           const rem = getResendCooldownSecondsFromError(e);
           if (rem != null) applyResendCooldown(rem);
+          setErr(formatVerifyEmailErrorMessage(e, errStrings));
         })
-        .finally(() => stripQuery());
+        .finally(() => {
+          setResendBusy(false);
+          stripQuery();
+        });
     } else {
       stripQuery();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot resentHint; v.resendOk from closure
-  }, [searchParams, emailInitial, navigate]);
+  }, [searchParams, emailInitial, navigate, errStrings]);
 
   const resendCountingDown = resendSecondsLeft > 0;
   useEffect(() => {
@@ -97,25 +147,6 @@ export const VerifyEmailPage = () => {
     }, 1000);
     return () => clearInterval(id);
   }, [resendCountingDown]);
-
-  const errStrings = {
-    errorGeneric: u.login.error,
-    errorInvalidCredentials: u.login.errorInvalidCredentials,
-    errorInvalidEmailFormat: u.login.errorInvalidEmailFormat,
-    errorNetwork: u.login.errorNetwork,
-    errorEmailNotVerified: u.login.errorEmailNotVerified,
-    errorTooManyRequests: u.login.errorTooManyRequests,
-    errorTooManyAttempts: u.login.errorTooManyAttempts,
-    resendCooldownWait: u.login.resendCooldownWait,
-    resendCooldownIn: u.login.resendCooldownIn,
-    errorInvalidCode: v.errorInvalidCode,
-    errorAlreadyVerified: v.errorAlreadyVerified,
-    errorUserNotFound: v.errorUserNotFound,
-    errorResendNotApplicable: v.errorResendNotApplicable,
-    errorVerifyGeneric: v.errorVerifyGeneric,
-    emailRequired: v.emailRequired,
-    codeRequired: v.codeRequired
-  };
 
   const linkTokenConsumedRef = useRef(false);
   useEffect(() => {
@@ -130,7 +161,8 @@ export const VerifyEmailPage = () => {
     void verifyEmailFromLinkToken(th, typ)
       .then(() => {
         if (emailInitial) setLastLoginEmail(emailInitial);
-        return hydrate();
+        setBusy(false);
+        navigate("/workbench", { replace: true });
       })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message.trim() : "";
@@ -142,7 +174,7 @@ export const VerifyEmailPage = () => {
       })
       .finally(() => setBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot magic link; errStrings stable per locale
-  }, [searchParams, emailInitial, navigate, hydrate, v, u]);
+  }, [searchParams, emailInitial, navigate, errStrings]);
 
   const runVerify = () => {
     if (busy) return;
@@ -161,6 +193,8 @@ export const VerifyEmailPage = () => {
     void verifyEmailAndSignIn(em, code.trim())
       .then(() => {
         setLastLoginEmail(em);
+        setBusy(false);
+        navigate("/workbench", { replace: true });
       })
       .catch((e: unknown) => {
         setErr(formatVerifyEmailErrorMessage(e, errStrings));
@@ -182,18 +216,21 @@ export const VerifyEmailPage = () => {
       return;
     }
     setResendBusy(true);
+    logVerifyFlow("resend_manual_start", { email: em });
     void resendVerificationEmail(em)
       .then(() => {
+        logVerifyFlow("resend_manual_success", { email: em });
+        setHasEverSentCode(true);
         setInfo(v.resendOk);
         applyResendCooldown(AUTH_RESEND_COOLDOWN_SECONDS);
       })
       .catch((e: unknown) => {
+        logVerifyFlow("resend_manual_error", {
+          email: em,
+          message: e instanceof Error ? e.message : String(e)
+        });
         const rem = getResendCooldownSecondsFromError(e);
-        if (rem != null) {
-          applyResendCooldown(rem);
-          setErr(u.login.resendCooldownWait);
-          return;
-        }
+        if (rem != null) applyResendCooldown(rem);
         setErr(formatVerifyEmailErrorMessage(e, errStrings));
       })
       .finally(() => setResendBusy(false));
@@ -204,10 +241,7 @@ export const VerifyEmailPage = () => {
   return (
     <div className="shell-root app-root login-shell">
       <section className="shell-main login-shell__main">
-        <header className="shell-header">
-          <span className="shell-header__title">{v.headerTitle}</span>
-          <span className="shell-header__meta">{u.login.headerMeta}</span>
-        </header>
+        <AuthPublicShellHeader title={v.headerTitle} meta={u.login.headerMeta} />
         <main className="workspace-container workspace-container--login">
           <div className="login-panel">
             <div className="page-stack page-narrow">
@@ -217,9 +251,18 @@ export const VerifyEmailPage = () => {
                 <p className="page-lead">{v.pageLead}</p>
               </header>
               <Card title={v.cardTitle}>
+                {fromLoginFlow ? (
+                  <p className="verify-email-page__reregister-hint text-muted text-sm mt-0 mb-3" role="status">
+                    {v.fromLoginBanner}
+                  </p>
+                ) : null}
                 {fromRegisterUnverifiedHint ? (
                   <p className="verify-email-page__reregister-hint text-muted text-sm mt-0 mb-3" role="status">
                     {v.alreadyRegisteredUnverifiedHint}
+                  </p>
+                ) : fromRegDupFlow ? (
+                  <p className="verify-email-page__reregister-hint text-muted text-sm mt-0 mb-3" role="status">
+                    {v.fromRegDupBanner}
                   </p>
                 ) : null}
                 <form
@@ -267,9 +310,12 @@ export const VerifyEmailPage = () => {
                   </Button>
                 </form>
                 {err ? (
-                  <p className="verify-email-page__alert text-danger text-sm mt-2 mb-0" role="alert">
+                  <pre
+                    className="verify-email-page__alert text-danger text-sm mt-2 mb-0 whitespace-pre-wrap break-words font-sans"
+                    role="alert"
+                  >
                     {err}
-                  </p>
+                  </pre>
                 ) : null}
                 {info ? (
                   <p className="verify-email-page__info text-muted text-sm mt-2 mb-0" role="status">
@@ -290,7 +336,9 @@ export const VerifyEmailPage = () => {
                       ? v.resendBusy
                       : resendSecondsLeft > 0
                         ? u.login.resendCooldownIn.replace("{n}", String(resendSecondsLeft))
-                        : v.resend}
+                        : hasEverSentCode
+                          ? v.resend
+                          : v.sendVerificationCode}
                   </Button>
                   {!AUTH_VERIFICATION_RESEND_ENABLED ? (
                     <span className="text-muted text-sm">{v.resendUnavailable}</span>
