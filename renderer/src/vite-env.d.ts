@@ -3,11 +3,12 @@
 interface ImportMetaEnv {
   readonly AICS_DEBUG_CONTEXT?: string;
   readonly AICS_API_TIMEOUT_MS?: string;
-  /** D-7-5A：Shared Core 基址（可由 vite define 从进程环境注入） */
+  /** 主 API / Shared Core 基址（`renderer/.env*` 或构建时进程环境） */
+  readonly VITE_API_BASE_URL?: string;
+  /** 兼容旧名；未设 `VITE_API_BASE_URL` 时仍可读取 */
   readonly VITE_SHARED_CORE_BASE_URL?: string;
   /** D-7-5A：AI 网关基址 */
   readonly VITE_AI_GATEWAY_BASE_URL?: string;
-  /** local | development | dev → 127.0.0.1:4000；缺省按 remote 解析 */
   readonly VITE_AICS_BACKEND_PROFILE?: string;
 }
 
