@@ -52,7 +52,7 @@ function memoryHintNonEmpty(w: CoreMemoryHintsWire | undefined): boolean {
   return Boolean(w && typeof w === "object" && Object.keys(w).length > 0);
 }
 
-/** 与 aics-core `executionTrust.js` 对齐的客户端兜底（网关未带 trust 字段时）。 */
+/** 与 aics-core `executionTrust.js` 对齐的客户端兜底（服务端未带 trust 字段时）。 */
 export function computeClientTrustV1(
   plan: TaskPlan | ExecutionPlan | null | undefined,
   memoryHints: CoreMemoryHintsWire | undefined

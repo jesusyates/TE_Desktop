@@ -40,7 +40,7 @@ function defaultTemplateName(sourcePrompt: string, sourceTaskId: string): string
 }
 
 /**
- * E-2：成功态保存 — POST /templates/save + 本地同 ID 缓存；明确成功/失败反馈。
+ * E-2 / P2：成功态保存 — POST /v1/templates + 本地同 ID 缓存；明确成功/失败反馈。
  */
 export const SaveAsTemplateButton = ({
   sourceTaskId,

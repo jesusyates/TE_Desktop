@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import type { ExecutionStatus } from "../../execution/session/execution";
 import {
   runIntelPostCritic,
-  runIntelPreFlight,
   type ContentActionKind,
   type IntelOrchestrationTrace
 } from "../../modules/contentIntelligence";
@@ -51,14 +50,8 @@ export function ContentIntelWorkbenchPanel({
     setErr(null);
     try {
       const data = await fetchHistoryListPage(1, 60, null);
-      let t: IntelOrchestrationTrace;
-      try {
-        t = await contentIntelPreflightOnCore({ prompt: p, historyItems: data.items });
-        setPreflightSource("core");
-      } catch {
-        t = runIntelPreFlight(p, data.items);
-        setPreflightSource("local");
-      }
+      let t = await contentIntelPreflightOnCore({ prompt: p, historyItems: data.items });
+      setPreflightSource("local");
       if (
         sessionStatus === "success" &&
         (resultTitle?.trim() || resultBodyPreview?.trim())

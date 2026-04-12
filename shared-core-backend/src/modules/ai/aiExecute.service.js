@@ -6,9 +6,15 @@ const { logger } = require("../../infra/logger");
 const { AppError } = require("../../utils/AppError");
 const { validatePromptForAi } = require("../../schemas/ai-request.schema");
 const { normalizeAIResult } = require("../../schemas/ai-result.schema");
-const { previewRoute, planAllowsAi } = require("./aiRouter.service");
+const {
+  previewRoute,
+  planAllowsAi,
+  resolveChatComplete,
+  apiKeyForProvider,
+  providerHasApiKey,
+  defaultModelForProvider
+} = require("./aiRouter.service");
 const { decide } = require("../controller/controller.service");
-const { chatComplete } = require("../../infra/ai/providers/openai.provider");
 const entitlementAccountStore = require("../../stores/account/entitlement.store");
 const { getSettingsStore } = require("../../stores/registry");
 const { resolveFlags } = require("../featureFlag/featureFlag.service");
@@ -162,7 +168,7 @@ async function standaloneExecute(ctx, body) {
         }
       };
     }
-    const hasKey = Boolean(c.openaiApiKey && String(c.openaiApiKey).trim() !== "");
+    const hasKey = providerHasApiKey(c, route.provider);
     if (!hasKey) {
       logger.info({
         event: "ai_execute",
@@ -180,7 +186,7 @@ async function standaloneExecute(ctx, body) {
         resultSourceType: "mock",
         router: route,
         result: {
-          summary: "[mock] 未配置 OPENAI_API_KEY，未调用模型。",
+          summary: "[mock] 未配置当前 AI Provider 的 API Key（如 DEEPSEEK_API_KEY / OPENAI_API_KEY），未调用模型。",
           content: "",
           disclaimer: "Mock only."
         }
@@ -214,16 +220,18 @@ async function standaloneExecute(ctx, body) {
   }
 
   try {
-    const modelUse = route.model || c.aiModelDefault;
+    const modelUse =
+      String(route.model || "").trim() || defaultModelForProvider(c, route.provider);
+    const chatComplete = resolveChatComplete(route.provider);
     const raw = await chatComplete({
       prompt: prompt.slice(0, c.aiMaxPromptChars),
       model: modelUse,
       timeoutMs: c.aiTimeoutMs,
-      apiKey: c.openaiApiKey
+      apiKey: apiKeyForProvider(c, route.provider)
     });
     const normalized = normalizeAIResult({
       content: raw.content,
-      provider: "openai",
+      provider: String(route.provider || "openai").toLowerCase() === "deepseek" ? "deepseek" : "openai",
       model: modelUse,
       usage: {
         inputTokens: raw.usage.prompt_tokens,
@@ -379,16 +387,18 @@ async function executeForTask(ctx, prompt, decision, entitlement, runId = null, 
   }
 
   try {
-    const modelUse = route.model || c.aiModelDefault;
+    const modelUse =
+      String(route.model || "").trim() || defaultModelForProvider(c, route.provider);
+    const chatComplete = resolveChatComplete(route.provider);
     const raw = await chatComplete({
       prompt: prompt.slice(0, c.aiMaxPromptChars),
       model: modelUse,
       timeoutMs: c.aiTimeoutMs,
-      apiKey: c.openaiApiKey
+      apiKey: apiKeyForProvider(c, route.provider)
     });
     const normalized = normalizeAIResult({
       content: raw.content,
-      provider: "openai",
+      provider: String(route.provider || "openai").toLowerCase() === "deepseek" ? "deepseek" : "openai",
       model: modelUse,
       usage: {
         inputTokens: raw.usage.prompt_tokens,

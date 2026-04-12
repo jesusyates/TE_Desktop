@@ -170,7 +170,7 @@ function normalizeTechnicalMessage(raw: string): string {
     return "服务出现异常，请稍后再试。";
   }
   if (lower.includes("http_502") || lower.includes("http_504")) {
-    return "网关响应异常，请稍后再试。";
+    return "服务端响应异常，请稍后再试。";
   }
 
   // 业务常量码（大写蛇形）：不向用户展示原文

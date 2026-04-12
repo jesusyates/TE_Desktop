@@ -8,7 +8,7 @@
  * - `AICS_DISABLE_LOCAL_AI_STUB=1`：任意环境显式禁止 stub（优先级高于 `AI_ALLOW_LOCAL_STUB`）。
  *
  * **桌面（renderer）**
- * - 不读取模型密钥；Stub / 真 AI 以 `/ai/content` 返回的 `aiOutcome` + `resultSource` 为准，经 `parseAiContentGatewayJson` 归一。
+ * - 不读取模型密钥；远端生成以 Shared Core `POST /v1/ai/execute` 为准，经 `parseSharedCoreAiExecuteResponse` 归一为 `aiOutcome` + `resultSource`。
  */
 export const AI_EXECUTION_ENV_POLICY = {
   stubIgnoredInProduction: "生产运行时 Core 强制忽略 AI_ALLOW_LOCAL_STUB；未配置 Router 则返回 router_not_configured，不返回开发 Stub。",

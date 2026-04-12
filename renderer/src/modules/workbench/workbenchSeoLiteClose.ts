@@ -48,7 +48,7 @@ export function normalizeArticleResult(content: string, userTheme: string): stri
     .filter(Boolean);
   const firstLine = blocks[0]?.split("\n")[0]?.trim() ?? "";
   if (firstLineLooksBad(firstLine)) {
-    text = `关于「${theme}」的分析与思考\n\n${text}`;
+    text = `## ${theme}\n\n${text}`;
     text = collapseBlankLines(text);
   }
 
@@ -59,13 +59,13 @@ export function normalizeArticleResult(content: string, userTheme: string): stri
       .filter(Boolean);
     if (parts.length >= 2) {
       const w = [...parts];
-      w.splice(1, 0, "## 核心要点");
+      w.splice(1, 0, "## 内容概要");
       if (w.length >= 3) {
-        w.splice(w.length - 2, 0, "## 深入分析");
+        w.splice(w.length - 2, 0, "## 展开说明");
       }
       text = w.join("\n\n");
     } else if (parts.length === 1) {
-      text = `${parts[0]}\n\n## 核心要点\n\n## 深入分析`;
+      text = `${parts[0]}\n\n## 内容概要\n\n## 展开说明`;
     }
   }
 
@@ -73,7 +73,7 @@ export function normalizeArticleResult(content: string, userTheme: string): stri
 
   const charCount = text.replace(/\s/g, "").length;
   if (charCount < 300) {
-    text = `${text}\n\n总结：该主题仍有进一步探讨空间，可从更多实际案例进行深入分析。`;
+    text = `${text}\n\n总结：该主题仍有进一步探讨空间，可从更多实际案例展开论述。`;
   }
 
   return text.trim();

@@ -41,10 +41,10 @@ export const AI_ROUTER_NOT_CONFIGURED_USER_ZH =
 export const AI_ROUTER_CALL_FAILED_USER_ZH =
   "模型服务调用失败或返回异常，请稍后重试；若持续失败请检查网络与后端 AI Router 状态。";
 
-/** 与网关通信失败（非业务 JSON） */
+/** 与服务端通信失败（非业务 JSON） */
 export const AI_CONTENT_TRANSPORT_USER_ZH = "无法与 AI 内容服务建立通信，请检查网络与登录状态后重试。";
 
-/** 网关返回数据无法解析（wire 校验失败） */
+/** 服务端返回数据无法解析（wire 校验失败） */
 export const AI_CONTENT_WIRE_INVALID_USER_ZH = "AI 服务返回数据格式异常，请稍后重试或联系支持。";
 
 /**

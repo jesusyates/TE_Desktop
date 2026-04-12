@@ -100,7 +100,7 @@
   border-radius: 0;
 }
 
-/* D-4：本轮 Core Memory 轻量提示（主消费 /memory/list，可见、非黑盒） */
+/* D-4 / P1：Core Memory 轻量提示（主消费 GET /v1/memory，可见、非黑盒） */
 .workbench-memory-hints-bar {
   flex-shrink: 0;
   margin: 0 var(--space-4, 16px) 0.5rem;

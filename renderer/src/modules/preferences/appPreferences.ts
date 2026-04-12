@@ -37,9 +37,9 @@ export type AppPreferencesV1 = {
   dataSafety: {
     /** 终态是否调用 `appendExecutionHistory` 写入服务端任务历史摘要（须登录） */
     allowServerHistoryWrite: boolean;
-    /** 是否允许任务结束后写入记忆回放 / Core 结果同步（recordTaskExecution、canonical flush、/result） */
+    /** 是否允许任务结束后写入记忆回放与 Shared Core 同步（recordTaskExecution、canonical flush、`POST /v1/memory/entries`） */
     allowTaskMemoryWrite: boolean;
-    /** 是否在 /analyze、/plan 等请求中附带附件元数据（名称、大小、MIME）；关闭则工作台提交前剥离 */
+    /** 是否随发往 Shared Core（会话相关请求等）附带附件元数据；关闭则工作台提交前剥离；**不影响**本地分析链 */
     sendAttachmentMetadataToCore: boolean;
   };
   /** Content Intelligence Phase 1：工作台归因面板（伪多智能体预检，无直连模型） */

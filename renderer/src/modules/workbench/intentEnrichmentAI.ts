@@ -2,8 +2,8 @@
  * AI-assisted Intent Enrichment v1：AI 优先理解，失败/超时回退规则版 buildEnrichedIntent。
  * 仅用于 Execution Preview，不触发任务执行。
  *
- * 调用：`invokeAiContentOnCore`（POST /ai/content · generate），经现有 AI 网关；客户端 800ms 超时即 fallback。
- * 产品说明中的 temperature/max_tokens 由网关侧路由默认策略承载，当前请求体仅含 action + prompt。
+ * 调用：`invokeAiContentOnCore` → Shared Core `POST /v1/ai/execute`（generate 语义由 prompt 前缀区分）。
+ * 客户端 800ms 超时即 fallback。temperature/max_tokens 由服务端路由承载，请求体仅 action + prompt。
  */
 
 import { invokeAiContentOnCore } from "../../services/api";
@@ -112,7 +112,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-/** 经 AI Gateway /ai/content（generate）；返回 null 表示不可用，由调用方 fallback */
+/** 经 Shared Core execute（generate）；返回 null 则调用方规则 fallback */
 export async function callIntentAI(userInput: string): Promise<EnrichedIntentV1 | null> {
   const line = userInput.trim();
   if (!line) return null;

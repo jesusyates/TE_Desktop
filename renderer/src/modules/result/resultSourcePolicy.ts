@@ -1,7 +1,7 @@
 /**
  * F-3A / G-1A：结果来源与可信度策略唯一入口。
  * — 禁止在 UI 或 executor 内分散推导 ResultSource / outputTrust
- * — AI 路径的 Wire 语义见 `metadata.aiOutcome`（与 parseAiContentGatewayJson / Core 对齐）
+ * — AI 路径的 Wire 语义见 `metadata.aiOutcome`（与 `parseSharedCoreAiExecuteResponse` / Shared Core 对齐）
  */
 import type { ContentExecutionResult } from "../content/contentResultTypes";
 import type { ExecutionPlanStep } from "../workbench/execution/executionPlanTypes";
@@ -11,7 +11,7 @@ import type { ContentTaskResult, ResultProvenance, ResultSource, TaskResult, Out
 import { trustSupplementForAiOutcome } from "./resultProvenanceUi";
 
 /**
- * G-1 后：`generate` / 前序 content 的 `summarize` 经 Core `/ai/content`，成功来源由服务端返回 `ai_result`。
+ * G-1：`generate` / 前序 content 的 `summarize` 经 Shared Core `POST /v1/ai/execute`；`resultSourceType` 映射为 `resultSource` / `aiOutcome`。
  * 本开关仅影响**未走 Router 的本地占位链路**（如 computer 摘要占位）。
  */
 export const CONTENT_PIPELINE_USES_REAL_AI = false;

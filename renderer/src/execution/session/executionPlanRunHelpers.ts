@@ -16,6 +16,7 @@ import {
   resultSourceForExecutionPlanContribution
 } from "../../modules/result/resultSourcePolicy";
 import { lrPlanStepAggregateHeader } from "../../modules/workbench/execution/localRuntimeNomenclature.zh";
+import { sanitizeResultContent } from "../../modules/result/sanitizeResultContent";
 
 export function mapExecutionPlanStepStatus(
   plan: ExecutionPlan,
@@ -117,7 +118,8 @@ export function aggregateExecutionStepResults(
     if (r?.kind === "content") {
       const src = resultSourceForExecutionPlanContribution(st, r);
       contributions.push({ stepId: st.stepId, stepType: st.type, source: src });
-      const body = (r.body || r.summary || "").trim();
+      const rawBody = (r.body || r.summary || "").trim();
+      const body = sanitizeResultContent(rawBody, { resultSource: r.resultSource });
       if (body || (r.title || "").trim()) {
         const header =
           st.type === "capability"
@@ -125,7 +127,7 @@ export function aggregateExecutionStepResults(
             : isLocalExecutionStepType(st.type)
               ? lrPlanStepAggregateHeader(st.type, (r.title || "").trim(), st.title.trim())
               : (r.title || st.title).trim();
-        chunks.push(`### ${header}\n\n${body || r.summary || ""}`);
+        chunks.push(`### ${header}\n\n${body}`);
       }
     }
   }
@@ -140,10 +142,11 @@ export function aggregateExecutionStepResults(
     authenticity
   };
   const hasNonAuthenticSources = hasNonAuthenticOutput(outputTrust);
+  const joined = chunks.join("\n\n---\n\n");
   return {
     kind: "content",
     title: "执行结果汇总",
-    body: chunks.join("\n\n---\n\n"),
+    body: sanitizeResultContent(joined, { resultSource }),
     summary: pipelineAggregateSummaryZh(outputTrust),
     action: "pipeline_aggregate",
     resultSource,

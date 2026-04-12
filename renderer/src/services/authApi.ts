@@ -724,7 +724,7 @@ function isAuthMeSuccessBody(data: unknown): data is AuthMeSuccessBody {
 }
 
 /**
- * MODULE C-3：解析 `/v1/auth/me` 信封；无效会话时 `clearVault === true`（网络/5xx 不清vault）。
+ * MODULE C-3：解析 `GET /v1/account/session`（身份 profile）；无效会话时 `clearVault === true`（网络/5xx 不清 vault）。
  */
 export async function fetchAuthMeValidated(): Promise<AuthMeSuccessBody> {
   const { apiClient } = await import("./apiClient");
@@ -732,7 +732,7 @@ export async function fetchAuthMeValidated(): Promise<AuthMeSuccessBody> {
     let status = 0;
     let raw: unknown;
     try {
-      const res = await apiClient.get<unknown>(`${AUTH_V1}/me`, { validateStatus: () => true });
+      const res = await apiClient.get<unknown>("/v1/account/session", { validateStatus: () => true });
       status = res.status;
       raw = res.data;
     } catch (e) {
@@ -744,12 +744,26 @@ export async function fetchAuthMeValidated(): Promise<AuthMeSuccessBody> {
 
     const data = normalizeV1ResponseBody(raw);
 
-    if (status === 200 && isAuthMeSuccessBody(data)) {
-      const rawUser = data.user as unknown as Record<string, unknown>;
-      return {
-        success: true,
-        user: enrichAuthMeUser(rawUser, data.user)
-      };
+    if (status === 200 && data && typeof data === "object") {
+      const d = data as Record<string, unknown>;
+      const userId = String(d.userId ?? "").trim();
+      let email = String(d.email ?? "").trim();
+      if (!email) {
+        const { useAuthStore } = await import("../store/authStore");
+        email = useAuthStore.getState().userEmail.trim();
+      }
+      if (userId && email) {
+        const rawUser = {
+          ...d,
+          userId,
+          email,
+          client_platform: d.platform ?? d.client_platform
+        };
+        return {
+          success: true,
+          user: enrichAuthMeUser(rawUser as Record<string, unknown>, { userId, email })
+        };
+      }
     }
 
     const rawCode =

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { peekExecutionDetailCache } from "../../services/executionDetailLocalCache";
 import { fetchTaskSnapshot, type TaskSnapshotResponse } from "../../services/tasks.api";
+import { mapBackendStatusToExecutionStatus } from "./taskExecutionMap";
+import { shouldPollTaskStatus } from "./execution";
 
 const BASE_INTERVAL_MS = 2000;
 const MAX_BACKOFF_MS = 10000;
@@ -76,6 +78,23 @@ export function useExecutionEventStream(taskId: string): ExecutionEventStreamSna
     let cancelled = false;
     let backoffMs = BASE_INTERVAL_MS;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let stopReason: string | null = null;
+    let stopLogged = false;
+
+    const devPoll = (msg: string, detail?: Record<string, unknown>) => {
+      if (!import.meta.env.DEV) return;
+      // eslint-disable-next-line no-console -- DEV 轮询排障
+      console.debug(`[execution-poll] ${msg}`, { taskId: tid, runId: null as string | null, ...detail });
+    };
+
+    const logPollingStopOnce = (reason: string, extra?: Record<string, unknown>) => {
+      if (stopLogged) return;
+      stopLogged = true;
+      stopReason = reason;
+      devPoll("polling stop", { stopReason: reason, ...extra });
+    };
+
+    devPoll("polling start", { reason: "effect_subscribed" });
 
     const schedule = (delay: number, fn: () => void) => {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
@@ -90,19 +109,30 @@ export function useExecutionEventStream(taskId: string): ExecutionEventStreamSna
         backoffMs = BASE_INTERVAL_MS;
         const next = normalizeSnapshot(data);
         setSnap(next);
-        console.log("[event-stream]", {
-          taskId: tid,
+        const mapped = mapBackendStatusToExecutionStatus(next.rawStatus);
+        const continuePoll = shouldPollTaskStatus(mapped, tid, null);
+        devPoll("polling tick", {
           rawStatus: next.rawStatus,
+          mappedStatus: mapped,
+          continuePoll,
           logsCount: next.logs.length,
           stepsCount: next.steps.length,
           hasResult: next.result != null
         });
+        if (!continuePoll) {
+          logPollingStopOnce("terminal_status", {
+            rawStatus: next.rawStatus,
+            mappedStatus: mapped
+          });
+          return;
+        }
         schedule(BASE_INTERVAL_MS, () => {
           void poll();
         });
       } catch (e) {
         if (cancelled) return;
         console.warn("[event-stream] fetch failed", { taskId: tid, error: e });
+        devPoll("polling tick", { error: true, stopReason: null });
         backoffMs = Math.min(Math.max(backoffMs * 2, BASE_INTERVAL_MS), MAX_BACKOFF_MS);
         schedule(backoffMs, () => {
           void poll();
@@ -115,6 +145,7 @@ export function useExecutionEventStream(taskId: string): ExecutionEventStreamSna
     return () => {
       cancelled = true;
       if (timeoutId !== undefined) clearTimeout(timeoutId);
+      logPollingStopOnce(stopReason ?? "unmount_or_taskid_change");
     };
   }, [taskId, stableEmpty]);
 

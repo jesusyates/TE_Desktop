@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { Button } from "../components/ui/Button";
 import {
-  deleteTemplateById,
   fetchTemplateById,
   normalizeTemplateCoreContent,
   readTemplateDetailTopFields,
@@ -37,7 +36,6 @@ export const TemplateDetailPage = () => {
   const [detail, setDetail] = useState<TemplateCoreDetailRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!templateId) {
@@ -72,18 +70,9 @@ export const TemplateDetailPage = () => {
   const isSystem = detail?.isSystem === true;
   const meta = detail ? readTemplateDetailTopFields(detail) : null;
 
-  const runDelete = async () => {
+  const runDelete = () => {
     if (!templateId || isSystem) return;
-    if (!window.confirm(tp.deleteTemplateConfirm)) return;
-    setDeleteBusy(true);
-    try {
-      await deleteTemplateById(templateId);
-      navigate("/templates", { replace: true });
-    } catch (e) {
-      window.alert(`${tp.deleteTemplateFail}: ${e instanceof Error ? e.message : ""}`);
-    } finally {
-      setDeleteBusy(false);
-    }
+    window.alert(tp.deleteTemplateUnavailable);
   };
 
   const openInWorkbench = () => {
@@ -201,8 +190,8 @@ export const TemplateDetailPage = () => {
                 {au.createFromTemplate}
               </Button>
               {!isSystem ? (
-                <Button type="button" variant="secondary" disabled={deleteBusy} onClick={() => void runDelete()}>
-                  {deleteBusy ? "…" : tp.btnDeleteTemplate}
+                <Button type="button" variant="secondary" onClick={runDelete}>
+                  {tp.btnDeleteTemplate}
                 </Button>
               ) : null}
             </div>

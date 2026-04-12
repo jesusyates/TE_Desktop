@@ -16,10 +16,16 @@ export function mapBackendStatusToExecutionStatus(rawStatus: string): ExecutionS
       return "paused";
     case "success":
     case "partial_success":
+    case "completed":
+    case "complete":
+    case "succeeded":
+    case "done":
       return "success";
     case "failed":
+    case "error":
       return "error";
     case "cancelled":
+    case "canceled":
       return "stopped";
     case "stopping":
       return "stopping";

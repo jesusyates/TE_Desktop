@@ -1,9 +1,18 @@
 /**
- * D-7-3H：仅从 AI 网关读取归档结果（HTTP 封装，不散落在 UI）。
+ * D-7-3H：Shared Core 归档结果（`GET /v1/history` 列表预览 + `GET /v1/results/:runId` 详情）。
  * D-7-4Z：**secondary persistence** — 用于结果区覆盖展示；执行流以本地 `useExecutionSession` 为准。
  */
 import type { TaskResult } from "../modules/result/resultTypes";
-import { aiGatewayClient } from "./apiClient";
+import {
+  computeOutputTrustFromDistinctSources,
+  provenanceAuthenticityFromDistinctSources
+} from "../modules/result/resultSourcePolicy";
+import { apiClient } from "./apiClient";
+import { normalizeV1ResponseBody } from "./v1Envelope";
+import {
+  mapServerExecutionResultToTaskResult,
+  normalizeBackendResultSourceType
+} from "./serverExecutionResultMap";
 
 export type CoreResultRecord = {
   savedAt: string;
@@ -15,90 +24,73 @@ export type CoreResultRecord = {
   hash?: string;
 };
 
-function parseStepResults(raw: unknown): Record<string, TaskResult> | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const out: Record<string, TaskResult> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    const tr = parseTaskResult(v);
-    if (tr) out[k] = tr;
-  }
-  return Object.keys(out).length ? out : undefined;
+/**
+ * 将 `GET /v1/history` 列表项映射为 CoreResultRecord（仅 summary 预览；完整正文用 `getCoreResultByRunId`）。
+ */
+function historyListItemToCoreResultRecord(row: unknown): CoreResultRecord | null {
+  if (!row || typeof row !== "object") return null;
+  const o = row as Record<string, unknown>;
+  const prompt = String(o.prompt ?? "").trim();
+  const summary = String(o.summary ?? "").trim();
+  const runId = String(o.runId ?? o.run_id ?? "").trim();
+  const historyId = String(o.historyId ?? o.history_id ?? o.id ?? "").trim();
+  const rst = String(o.resultSourceType ?? o.result_source_type ?? "mock");
+  const savedAt = String(o.updatedAt ?? o.updated_at ?? o.createdAt ?? o.created_at ?? "").trim();
+  const text = summary || prompt;
+  if (!text && !runId) return null;
+  const src = normalizeBackendResultSourceType(rst);
+  const distinct = [src];
+  const title = (
+    text.split("\n").map((x) => x.trim()).find(Boolean) ||
+    prompt.slice(0, 120) ||
+    "历史摘要"
+  ).slice(0, 500);
+  const body = text || prompt || "—";
+  const result: TaskResult = {
+    kind: "content",
+    title,
+    body,
+    ...(summary ? { summary } : {}),
+    resultSource: src,
+    metadata: {
+      outputTrust: computeOutputTrustFromDistinctSources(distinct),
+      resultProvenance: {
+        steps: [],
+        distinctSources: distinct,
+        authenticity: provenanceAuthenticityFromDistinctSources(distinct)
+      },
+      _source: "v1_history_list",
+      historyListPreview: true,
+      ...(historyId ? { historyId } : {}),
+      ...(runId ? { coreRunId: runId } : {})
+    }
+  };
+  return {
+    savedAt: savedAt || new Date().toISOString(),
+    ...(runId ? { runId } : {}),
+    prompt,
+    result
+  };
 }
 
-function parseTaskResult(raw: unknown): TaskResult | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Record<string, unknown>;
-  if (o.kind === "content") {
-    const title = typeof o.title === "string" ? o.title : "";
-    const body = typeof o.body === "string" ? o.body : "";
-    if (!title && !body) return null;
-    return {
-      kind: "content",
-      title,
-      body,
-      ...(typeof o.summary === "string" ? { summary: o.summary } : {}),
-      ...(o.metadata && typeof o.metadata === "object"
-        ? { metadata: o.metadata as Record<string, unknown> }
-        : {}),
-      ...(typeof o.action === "string" ? { action: o.action } : {}),
-      ...(typeof o.stepCount === "number" ? { stepCount: o.stepCount } : {}),
-      ...(typeof o.durationMs === "number" ? { durationMs: o.durationMs } : {})
-    };
-  }
-  if (o.kind === "computer") {
-    const title = typeof o.title === "string" ? o.title : "";
-    if (!title && !o.body) return null;
-    return {
-      kind: "computer",
-      title,
-      ...(typeof o.body === "string" ? { body: o.body } : {}),
-      ...(typeof o.summary === "string" ? { summary: o.summary } : {}),
-      ...(o.metadata && typeof o.metadata === "object"
-        ? { metadata: o.metadata as Record<string, unknown> }
-        : {}),
-      ...(typeof o.environmentLabel === "string" ? { environmentLabel: o.environmentLabel } : {}),
-      ...(typeof o.targetApp === "string" ? { targetApp: o.targetApp } : {}),
-      ...(typeof o.stepCount === "number" ? { stepCount: o.stepCount } : {}),
-      ...(typeof o.eventCount === "number" ? { eventCount: o.eventCount } : {})
-    };
-  }
-  return null;
-}
-
-function normalizeCoreRow(raw: unknown): CoreResultRecord | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Record<string, unknown>;
-  const result = parseTaskResult(o.result);
-  if (!result) return null;
-  const prompt = typeof o.prompt === "string" ? o.prompt : "";
-  const savedAt = typeof o.savedAt === "string" ? o.savedAt : "";
-  const runId = typeof o.runId === "string" ? o.runId : undefined;
-  const stepResults = parseStepResults(o.stepResults);
-  const hash = typeof o.hash === "string" && o.hash.trim() ? o.hash.trim() : undefined;
-  return { savedAt, runId, prompt, result, stepResults, ...(hash ? { hash } : {}) };
-}
-
+/** 列表统一走 Shared Core `GET /v1/history`（不再使用历史 `/results` 路径）。 */
 export async function listCoreResults(limit = 20): Promise<CoreResultRecord[]> {
   const lim = Math.min(100, Math.max(1, limit));
-  const { data, status } = await aiGatewayClient.get<unknown>(`/results?limit=${lim}`, {
+  const { data: raw, status } = await apiClient.get<unknown>("/v1/history", {
+    params: { page: 1, pageSize: lim },
     validateStatus: () => true
   });
-  const obj = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const top = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   if (status < 200 || status >= 300) {
     const msg =
-      "message" in obj && typeof obj.message === "string"
-        ? obj.message
-        : `HTTP ${status}`;
+      "message" in top && typeof top.message === "string" ? top.message : `HTTP ${status}`;
     throw new Error(msg || "请求失败");
   }
-  if (obj.success !== true || !Array.isArray(obj.items)) {
-    const msg =
-      "message" in obj && typeof obj.message === "string" ? obj.message : "invalid results response";
-    throw new Error(msg);
-  }
+  const inner = normalizeV1ResponseBody(raw) as { items?: unknown[] } | null;
+  const itemsRaw = inner && Array.isArray(inner.items) ? inner.items : [];
   const out: CoreResultRecord[] = [];
-  for (const it of obj.items) {
-    const n = normalizeCoreRow(it);
+  for (const it of itemsRaw) {
+    const n = historyListItemToCoreResultRecord(it);
     if (n) out.push(n);
   }
   return out;
@@ -107,22 +99,34 @@ export async function listCoreResults(limit = 20): Promise<CoreResultRecord[]> {
 export async function getCoreResultByRunId(runId: string): Promise<CoreResultRecord | null> {
   const rid = runId.trim();
   if (!rid) return null;
-  const { data, status } = await aiGatewayClient.get<unknown>(`/results/${encodeURIComponent(rid)}`, {
+  const { data: raw, status } = await apiClient.get<unknown>(`/v1/results/${encodeURIComponent(rid)}`, {
     validateStatus: () => true
   });
   if (status === 404) return null;
-  const obj = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const top = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   if (status < 200 || status >= 300) {
     const msg =
-      "message" in obj && typeof obj.message === "string"
-        ? obj.message
-        : `HTTP ${status}`;
+      "message" in top && typeof top.message === "string" ? top.message : `HTTP ${status}`;
     throw new Error(msg || "请求失败");
   }
-  if (obj.success !== true) {
-    const msg =
-      "message" in obj && typeof obj.message === "string" ? obj.message : "invalid result response";
-    throw new Error(msg);
-  }
-  return normalizeCoreRow(obj.item);
+  const data = normalizeV1ResponseBody(raw) as Record<string, unknown> | null;
+  if (!data || typeof data !== "object") return null;
+  const resultRaw = data.result;
+  const rst = String(data.resultSourceType ?? "mock");
+  const taskResult = mapServerExecutionResultToTaskResult("", resultRaw, rst, data.templateSuggestion);
+  if (!taskResult) return null;
+  const savedAt =
+    typeof data.updatedAt === "string"
+      ? data.updatedAt
+      : typeof data.createdAt === "string"
+        ? data.createdAt
+        : new Date().toISOString();
+  return {
+    savedAt,
+    runId: String(data.runId ?? rid),
+    prompt: "",
+    result: taskResult,
+    stepResults: undefined,
+    hash: typeof data.hash === "string" ? data.hash : undefined
+  };
 }

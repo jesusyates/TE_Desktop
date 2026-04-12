@@ -7,7 +7,7 @@ import { useAuthStore } from "../store/authStore";
 import { getAuthSessionSnapshot } from "./authSession";
 import { getCoreRequestHeaders } from "./coreRequestContext";
 import { getMyPreferences, updateMyPreferences, type UserPreference } from "./preferencesApi";
-import { AI_GATEWAY_BASE_URL, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { getLastExportPathForDisplay } from "./localRuntimeService";
 import { HOT_STATE_STORAGE_KEY, loadHotSnapshot } from "./stateRestoration";
 import { loadAppPreferences, patchAppPreferences } from "../modules/preferences/appPreferences";
@@ -56,9 +56,8 @@ export type SettingsLocalDiagnostics = {
   hotStatePersisted: boolean;
   /** D-7-4X：最近一次成功导出路径（只读展示；无则为 null） */
   lastExportPath: string | null;
-  /** D-7-5A：当前生效的 HTTP 基址（只读） */
+  /** D-7-5A：当前生效的 Shared Core HTTP 基址（只读） */
   sharedCoreBaseUrl: string;
-  aiGatewayBaseUrl: string;
 };
 
 export function getSettingsLocalDiagnostics(): SettingsLocalDiagnostics {
@@ -72,7 +71,6 @@ export function getSettingsLocalDiagnostics(): SettingsLocalDiagnostics {
     authMode: snap.isGuest ? "guest" : "session",
     hotStatePersisted,
     lastExportPath: getLastExportPathForDisplay(),
-    sharedCoreBaseUrl: SHARED_CORE_BASE_URL,
-    aiGatewayBaseUrl: AI_GATEWAY_BASE_URL
+    sharedCoreBaseUrl: SHARED_CORE_BASE_URL
   };
 }

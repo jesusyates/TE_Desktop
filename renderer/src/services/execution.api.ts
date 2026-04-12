@@ -114,17 +114,13 @@ function mapV1ItemToExecutionDetail(item: Record<string, unknown>): ExecutionTas
 
 export const executionApi = {
   async createExecutionTask(payload: CreateExecutionTaskRequestDTO) {
-    const body = {
-      id: payload.taskId,
-      title: payload.prompt,
-      oneLinePrompt: payload.prompt,
-      input: payload.input,
-      plannerSource: payload.plannerSource,
-      sourceTaskId: payload.sourceTaskId,
-      runType: payload.runType ?? "new",
-      status: toCanonTaskStatus(payload.status)
-    };
-    const { data: raw } = await apiClient.post<unknown>("/v1/tasks", body);
+    const prompt =
+      String(payload.prompt || "").trim() ||
+      String(payload.input?.oneLinePrompt || "").trim();
+    if (!prompt.trim()) {
+      throw new Error("prompt_required");
+    }
+    const { data: raw } = await apiClient.post<unknown>("/v1/tasks", { prompt: prompt.trim() });
     normalizeV1ResponseBody(raw);
   },
 

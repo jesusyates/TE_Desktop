@@ -1,13 +1,12 @@
 /**
- * D-7-5A：双后端 HTTP 基址单点配置（无密钥）。
+ * D-7-5A：Shared Core HTTP 基址单点配置（无密钥）。
  *
- * - **API_BASE_URL** / **SHARED_CORE_BASE_URL**：账户 / 偏好 / `apiClient` / `authApi`（与 shared-core-backend 同源）。
- * - **AI_GATEWAY_BASE_URL**：analyze / plan 等（`aiGatewayClient`）。
+ * **唯一业务后端**：shared-core-backend（账户、偏好、AICS Domain、`apiClient`、`authApi` 同源）。
  *
- * Shared Core / API 解析优先级：
+ * 解析优先级：
  * 1. `VITE_API_BASE_URL`（推荐，见 `renderer/.env*`）
  * 2. `VITE_SHARED_CORE_BASE_URL` / `AICS_SHARED_CORE_BASE_URL`（兼容旧名与 Vite define 注入）
- * 3. 兜底：`DEFAULT_LOCAL_API`（本地联调）
+ * 3. 兜底：`DEFAULT_LOCAL_SHARED_CORE`（本地联调）
  *
  * 不在此文件写死生产环境服务器地址；生产基址由 `renderer/.env.production` 或构建时环境变量提供。
  */
@@ -18,28 +17,18 @@ function normalizeBaseUrl(raw: string | undefined): string | undefined {
   return t.length > 0 ? t : undefined;
 }
 
-/** 未配置任何 env 时的本地兜底（开发联调） */
-const DEFAULT_LOCAL_API = "http://127.0.0.1:4000";
+/** 未配置任何 env 时的本地兜底（开发联调 shared-core-backend） */
+const DEFAULT_LOCAL_SHARED_CORE = "http://127.0.0.1:4000";
 
-const DEFAULT_AI_GATEWAY_LOCAL = "http://127.0.0.1:3000";
-
-/** 未单独配置 AI 网关时：与 API 同主机、端口 3000（避免在代码中写死生产域名） */
-function defaultAiGatewayFromApi(apiBase: string): string {
-  try {
-    const u = new URL(apiBase);
-    u.port = "3000";
-    return u.toString().replace(/\/+$/, "");
-  } catch {
-    return DEFAULT_AI_GATEWAY_LOCAL;
-  }
-}
-
-export type ApiBaseResolutionSource =
+export type SharedCoreBaseResolutionSource =
   | "VITE_API_BASE_URL"
   | "VITE_SHARED_CORE_BASE_URL"
-  | "defaultLocalApi";
+  | "defaultLocalSharedCore";
 
-function resolveApiBaseUrlDetailed(): { url: string; source: ApiBaseResolutionSource } {
+function resolveSharedCoreBaseUrlDetailed(): {
+  url: string;
+  source: SharedCoreBaseResolutionSource;
+} {
   const fromPrimary = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL);
   if (fromPrimary) {
     return { url: fromPrimary, source: "VITE_API_BASE_URL" };
@@ -48,20 +37,16 @@ function resolveApiBaseUrlDetailed(): { url: string; source: ApiBaseResolutionSo
   if (legacy) {
     return { url: legacy, source: "VITE_SHARED_CORE_BASE_URL" };
   }
-  return { url: DEFAULT_LOCAL_API, source: "defaultLocalApi" };
+  return { url: DEFAULT_LOCAL_SHARED_CORE, source: "defaultLocalSharedCore" };
 }
 
-const _apiResolved = resolveApiBaseUrlDetailed();
+const _sharedCoreResolved = resolveSharedCoreBaseUrlDetailed();
 
-/** 主 API（Shared Core）基址；构建/运行环境由 `VITE_API_BASE_URL` 控制 */
-export const API_BASE_URL = _apiResolved.url;
+/** Shared Core 基址；`API_BASE_URL` 与其恒等 */
+export const SHARED_CORE_BASE_URL = _sharedCoreResolved.url;
 
-/** 与 `API_BASE_URL` 相同（历史命名，供 authApi / apiClient 等沿用） */
-export const SHARED_CORE_BASE_URL = API_BASE_URL;
-
-export const AI_GATEWAY_BASE_URL =
-  normalizeBaseUrl(import.meta.env.VITE_AI_GATEWAY_BASE_URL) ??
-  (import.meta.env.DEV ? DEFAULT_AI_GATEWAY_LOCAL : defaultAiGatewayFromApi(API_BASE_URL));
+/** 与 `SHARED_CORE_BASE_URL` 相同（历史命名，部分模块仍引用 `API_BASE_URL`） */
+export const API_BASE_URL = SHARED_CORE_BASE_URL;
 
 /**
  * 登录/注册排障：当前 renderer 解析结果与 env 来源。
@@ -69,12 +54,11 @@ export const AI_GATEWAY_BASE_URL =
 export function getSharedCoreBaseUrlDebugInfo(): Record<string, unknown> {
   return {
     mode: import.meta.env.MODE,
-    API_BASE_URL,
     SHARED_CORE_BASE_URL,
-    resolutionSource: _apiResolved.source,
+    API_BASE_URL,
+    resolutionSource: _sharedCoreResolved.source,
     VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL ?? "",
     VITE_SHARED_CORE_BASE_URL: import.meta.env.VITE_SHARED_CORE_BASE_URL ?? "",
-    VITE_AI_GATEWAY_BASE_URL: import.meta.env.VITE_AI_GATEWAY_BASE_URL ?? "",
     VITE_AICS_BACKEND_PROFILE: import.meta.env.VITE_AICS_BACKEND_PROFILE ?? "",
     viteDev: import.meta.env.DEV,
     viteProd: import.meta.env.PROD

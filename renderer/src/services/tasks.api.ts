@@ -12,6 +12,25 @@ export type CreateTaskResponse = {
   result: { title: string; content: string };
 };
 
+/** POST /v1/tasks/:id/run 成功 data */
+export type TaskRunApiResponse = {
+  runId: string;
+  status: string;
+  steps?: unknown[];
+  result: unknown;
+  resultSourceType: string;
+  historyId?: string | null;
+  templateSuggestion?: unknown;
+  persistenceStrategy?: unknown;
+};
+
+export function buildTaskApiPrompt(oneLine: string, importedMaterials: string[]): string {
+  const line = String(oneLine ?? "").trim();
+  const mats = (importedMaterials ?? []).map((x) => String(x).trim()).filter(Boolean);
+  if (!mats.length) return line;
+  return `${line}\n\n—— 参考资料 ——\n${mats.join("\n")}`;
+}
+
 /** GET /v1/tasks/:id — 域任务快照（与 execution 内存任务不同源时步骤为空）。 */
 export type TaskSnapshotTask = {
   id: string;
@@ -26,27 +45,50 @@ export type TaskSnapshotResponse = {
   logs: unknown[];
 };
 
-function mapV1TaskItemToCreateResponse(item: Record<string, unknown>, input: CreateTaskBody): CreateTaskResponse {
-  const prompt = String(input.oneLinePrompt ?? item.title ?? "").trim();
+export async function createTask(body: CreateTaskBody): Promise<CreateTaskResponse> {
+  const prompt = buildTaskApiPrompt(body.oneLinePrompt ?? "", body.importedMaterials ?? []);
+  if (!prompt.trim()) {
+    throw new Error("prompt_required");
+  }
+  const { data: raw } = await apiClient.post<unknown>("/v1/tasks", { prompt: prompt.trim() });
+  const inner = normalizeV1ResponseBody(raw) as Record<string, unknown> | null;
+  const taskId =
+    inner && typeof inner === "object" && inner.taskId != null ? String(inner.taskId).trim() : "";
+  if (!taskId) {
+    throw new Error("create_task_invalid_response");
+  }
   return {
-    id: String(item.id ?? ""),
-    status: String(item.status ?? "draft"),
+    id: taskId,
+    status: "pending",
     steps: [],
     result: {
-      title: String(item.title ?? "任务").trim() || "任务",
-      content: prompt
+      title: "任务",
+      content: prompt.trim()
     }
   };
 }
 
-export async function createTask(body: CreateTaskBody): Promise<CreateTaskResponse> {
-  const { data: raw } = await apiClient.post<unknown>("/v1/tasks", body);
+export async function runTask(taskId: string): Promise<TaskRunApiResponse> {
+  const id = String(taskId ?? "").trim();
+  if (!id) throw new Error("task_id_required");
+  const { data: raw } = await apiClient.post<unknown>(`/v1/tasks/${encodeURIComponent(id)}/run`, {});
   const inner = normalizeV1ResponseBody(raw) as Record<string, unknown> | null;
-  const item = inner && typeof inner === "object" && inner.item && typeof inner.item === "object" ? inner.item : null;
-  if (!item || typeof item !== "object") {
-    throw new Error("create_task_invalid_response");
+  if (!inner || typeof inner !== "object") {
+    throw new Error("run_invalid_response");
   }
-  return mapV1TaskItemToCreateResponse(item as Record<string, unknown>, body);
+  const runId = inner.runId != null ? String(inner.runId).trim() : "";
+  if (!runId) {
+    throw new Error("run_invalid_response");
+  }
+  return inner as TaskRunApiResponse;
+}
+
+/** GET /v1/task-runs/:runId */
+export async function fetchTaskRunById(runId: string): Promise<unknown> {
+  const rid = String(runId ?? "").trim();
+  if (!rid) throw new Error("run_id_required");
+  const { data: raw } = await apiClient.get<unknown>(`/v1/task-runs/${encodeURIComponent(rid)}`);
+  return normalizeV1ResponseBody(raw);
 }
 
 export async function fetchTaskSnapshot(taskId: string): Promise<TaskSnapshotResponse> {

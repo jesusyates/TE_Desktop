@@ -1318,6 +1318,14 @@ body[data-theme="dark"] .execution-stage.execution-stage--live {
   margin: 0;
 }
 
+.execution-error-card__dev-raw {
+  background: var(--bg-layer);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  max-height: 280px;
+  overflow: auto;
+}
+
 .execution-result-panel__secondary {
   margin-top: var(--space-3);
   padding-top: var(--space-3);

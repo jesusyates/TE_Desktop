@@ -3,6 +3,8 @@
  */
 
 export type AuditEventDomainModel = {
+  /** Shared Core `GET /v1/audit-events` 行 id（列表 key 等） */
+  auditId?: string;
   runId: string;
   taskId?: string;
   eventType: string;

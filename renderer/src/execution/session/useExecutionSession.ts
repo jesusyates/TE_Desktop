@@ -37,7 +37,6 @@ import {
   localRuntimeStepTaskResultSource,
   resolveContentStepOutputSource
 } from "../../modules/result/resultSourcePolicy";
-import { postResultToCore } from "../../services/api";
 import { flushCanonicalMemoryAfterTaskSuccess } from "../../modules/memory/memoryWriteService";
 import { evaluateAuthEscalation, type AuthEscalationKind } from "../../services/authEscalation";
 import { persistExecutionCachesTerminal } from "../../services/executionDetailLocalCache";
@@ -45,7 +44,8 @@ import { inferRiskControlFields } from "../../services/riskTierPolicy";
 import { scheduleCoreAuditEvent } from "../../services/coreAuditService";
 import type { ExecutionBudget } from "../../services/systemPolicyService";
 import { getSystemPolicy } from "../../services/systemPolicyService";
-import { createTask, fetchTaskSnapshot } from "../../services/tasks.api";
+import { buildTaskApiPrompt, createTask, fetchTaskSnapshot, runTask } from "../../services/tasks.api";
+import { mapServerExecutionResultToTaskResult } from "../../services/serverExecutionResultMap";
 import {
   extractArticleThemeFromPrompt,
   isSeoLiteArticleExecutionPrompt,
@@ -72,6 +72,7 @@ import {
   getAllowedActions,
   isExecutionActionAllowed,
   isExecutionInProgress,
+  isExecutionTerminal,
   statusToActivePhase
 } from "./execution";
 import { mapBackendStatusToExecutionStatus } from "./taskExecutionMap";
@@ -89,7 +90,7 @@ import { runLocalExecutionPlanStep } from "../../services/localRuntimeBridge";
 /**
  * D-7-4Z — Authoritative execution source（权威执行真相源）
  * ---------------------------------------------------------------------------
- * 执行状态、步骤、终端结果以本 hook 返回的会话对象为准。Shared Core（apiClient）与 AI 网关（`services/api`）
+ * 执行状态、步骤、终端结果以本 hook 返回的会话对象为准。Shared Core（`apiClient` 及 `services/api` 内收口到 Core 的调用）
  * 仅用于账户/配额、旁路归档、审计与 optional 分析增强；**禁止**用其 HTTP 响应直接或单独驱动 `mockStatus` /
  * `currentResult` 的语义（可写入辅助字段、日志、异步同步，但会话门闩在本地）。
  */
@@ -135,6 +136,8 @@ type SessionSnapshot = {
 
 const MOCK_RUN_MS = 2400;
 const MOCK_VALIDATE_MS = 400;
+/** 首页结果区可选：短于该窗可不展示「正在处理」（与 mock 校验窗对齐） */
+export const SHORT_TASK_UI_SUPPRESS_MS = MOCK_VALIDATE_MS;
 const MOCK_QUEUE_EXTRA_MS = 450;
 const MOCK_STOP_MS = 320;
 
@@ -172,44 +175,6 @@ function axiosDetail(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function taskResultForCoreSync(r: TaskResult): TaskResult {
-  if (!isLocalRuntimeSummaryOnlyForPersistence(r)) return r;
-  if (r.kind !== "content") return r;
-  return {
-    ...r,
-    body: (r.summary || r.title || "").trim()
-  };
-}
-
-function stepResultsForCoreSync(steps: Record<string, TaskResult>): Record<string, TaskResult> {
-  const out: Record<string, TaskResult> = {};
-  for (const [k, v] of Object.entries(steps)) {
-    out[k] = taskResultForCoreSync(v);
-  }
-  return out;
-}
-
-/** D-7-3G：任务成功时归档 Result（失败仅打日志）；本地执行不落全文 */
-function dualWriteCoreResult(
-  s: Pick<SessionSnapshot, "lastPrompt" | "currentResult" | "stepResults">,
-  runId: number
-): void {
-  const result = s.currentResult;
-  const steps = s.stepResults;
-  if (!result && !Object.keys(steps).length) return;
-  const firstKey = Object.keys(steps)[0];
-  const primary = result ?? (firstKey != null ? steps[firstKey] : undefined);
-  if (!primary) return;
-  void postResultToCore({
-    runId: `run-${runId}`,
-    prompt: s.lastPrompt.trim(),
-    result: taskResultForCoreSync(primary),
-    stepResults: stepResultsForCoreSync(steps)
-  })
-    .then(() => console.log("[D-7-3G] Core Result synced"))
-    .catch((e) => console.error("[D-7-3G] Core /result failed", e));
-}
-
 function deriveExecutionStatus(
   snap: SessionSnapshot,
   rawStatus: string
@@ -219,12 +184,20 @@ function deriveExecutionStatus(
   if (mockStatus === "stopping" || mockStatus === "stopped") {
     return mockStatus;
   }
+  /**
+   * P0：**终态优先于 userPaused**。否则 `setSnap({ ...s, mockStatus: "error" })` 会保留 `userPaused: true`，
+   * 此处若先判 paused，会永远返回 paused → isBusy 真 → 发送永远提示「正在执行」。
+   */
+  if (isExecutionTerminal(mockStatus)) {
+    return mockStatus;
+  }
   if (userPaused) {
     return "paused";
   }
   if (mockStatus === "validating" || mockStatus === "queued") {
     return mockStatus;
   }
+  /** 非终态且非 validating/queued：轮询 rawStatus 与本地 mock 合成（终态已在上方返回，不会被快照拖回） */
   if (currentTaskId && rawStatus.trim()) {
     return mapBackendStatusToExecutionStatus(rawStatus);
   }
@@ -379,14 +352,16 @@ export function useExecutionSession(): UseExecutionSessionReturn {
   const prevLoggedStatusRef = useRef<ExecutionStatus | null>(null);
   /** D-5-6：防止同一 plan step 重复执行（React StrictMode / 重渲染） */
   const planStepLockRef = useRef<string | null>(null);
-  /** D-7-3E：曾用 Core Safety 且为 allow 时，capability 前做一次本地兜底对照 */
+  /** D-7-3E：会话内安全评估为 allow 时，capability 前做一次本地兜底对照 */
   const coreSafetyGateRef = useRef<{ coreResult: SafetyCheckResult } | null>(null);
-  /** D-7-3F：本 run 的 Core Permission 结果（按 capabilityId） */
+  /** D-7-3F：本 run 的权限覆盖结果（按 capabilityId，多来自 StartTaskPayload） */
   const permissionOverrideMapRef = useRef<Record<string, PermissionCheckResult> | null>(null);
-  /** D-7-3F：Core 判定为 allow 的 capability，用于本地权限兜底对照 */
+  /** D-7-3F：会话记录为 allow 的 capability，用于本地权限兜底对照 */
   const corePermissionAllowByCapRef = useRef<Set<string>>(new Set());
   /** D-6-3：用户发起的单次流水线（initFromTask 不设 true；clear 置 false） */
   const memoryEligibleRef = useRef(false);
+  /** POST /v1/tasks/:id/run 已写入后端 result/history；本地不再旁路旧 /result */
+  const sharedCoreAuthoritativeRunRef = useRef(false);
   const memoryRunIdCounterRef = useRef(0);
   const memoryActiveRunIdRef = useRef(0);
   const memoryLastRecordedRunIdRef = useRef(-1);
@@ -425,6 +400,28 @@ export function useExecutionSession(): UseExecutionSessionReturn {
   );
   /** D-7-5Z1：与 status 同步更新，避免仅靠 useEffect 滞后导致 start() 仍见「进行中」而早退 */
   derivedStatusRef.current = status;
+
+  const executionBusyLogRef = useRef<{ active: boolean; runId: string }>({ active: false, runId: "" });
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const busy = isExecutionInProgress(status);
+    const runIdNow = `run-${memoryActiveRunIdRef.current}`;
+    if (busy && !executionBusyLogRef.current.active) {
+      executionBusyLogRef.current = { active: true, runId: runIdNow };
+      // eslint-disable-next-line no-console -- P0 状态机排障
+      console.info("[ExecutionState] isBusy ON", { runId: runIdNow, status });
+    }
+    if (!busy && executionBusyLogRef.current.active) {
+      const rid = executionBusyLogRef.current.runId;
+      executionBusyLogRef.current = { active: false, runId: "" };
+      // eslint-disable-next-line no-console -- P0 状态机排障
+      console.info("[ExecutionState] isBusy OFF", {
+        runId: rid,
+        terminalStatus: status,
+        streamRaw: eventStreamRef.current.rawStatus || null
+      });
+    }
+  }, [status]);
 
   const mappedStatusForLog = useMemo(
     () =>
@@ -550,14 +547,17 @@ export function useExecutionSession(): UseExecutionSessionReturn {
           templateId: lastStartedTemplateIdRef.current.trim() || undefined
         })
           .then(() => console.log("[D-2] Core Memory canonical flush ok"))
-          .catch((e) => console.error("[D-2] Core /memory-record failed", e));
+          .catch((e) => console.error("[D-2] Shared Core memory append failed", e));
       }
       if (status === "success") {
-        dualWriteCoreResult(s, runIdNum);
-        setSnap((prev) => ({
-          ...prev,
-          lastCoreResultRunId: `run-${runIdNum}`
-        }));
+        if (sharedCoreAuthoritativeRunRef.current) {
+          sharedCoreAuthoritativeRunRef.current = false;
+        } else {
+          setSnap((prev) => ({
+            ...prev,
+            lastCoreResultRunId: `run-${runIdNum}`
+          }));
+        }
       }
     })();
   }, [status]);
@@ -631,45 +631,50 @@ export function useExecutionSession(): UseExecutionSessionReturn {
       lightMemoryHits?: string[] | null,
       submitUserLine?: string | null
     ) => {
-    schedule(timersRef.current, () => {
-      if (generationRef.current !== gen) return;
-      void createTask({
-        oneLinePrompt: prompt,
-        importedMaterials,
-        ...(templateId ? { templateId } : {}),
-        requestedMode,
-        resolvedMode,
-        ...(routerDecision ? { routerDecision } : {})
-      })
-        .then((res) => {
+      void (async () => {
+        if (generationRef.current !== gen) return;
+        const apiPrompt = buildTaskApiPrompt(prompt, importedMaterials);
+        try {
+          const res = await createTask({
+            oneLinePrompt: apiPrompt,
+            importedMaterials,
+            ...(templateId ? { templateId } : {}),
+            requestedMode,
+            resolvedMode,
+            ...(routerDecision ? { routerDecision } : {})
+          });
           if (generationRef.current !== gen) return;
-          const apiResult = toTaskResult(res.result ?? null);
-          const isArticlePack = isSeoLiteArticleExecutionPrompt(prompt);
-          const mergedBase: TaskResult | null = apiResult
-            ? {
-                ...apiResult,
-                metadata: {
-                  ...(apiResult.metadata ?? {}),
-                  _source: "shared_core_create_task",
-                  ...(apiResult.kind === "content"
-                    ? {
-                        taskType: "content",
-                        ...(isArticlePack
-                          ? { qualityHint: "seo_lite_v1", structure: "article_basic" }
-                          : {}),
-                        ...(lightMemoryHits && lightMemoryHits.length > 0
-                          ? {
-                              memoryInfluence: true,
-                              memoryHits: lightMemoryHits.slice(0, 2)
-                            }
-                          : {})
-                      }
-                    : {})
-                }
-              }
-            : null;
+          const run = await runTask(res.id);
+          if (generationRef.current !== gen) return;
 
-          let merged: TaskResult | null = mergedBase;
+          const rst = String(run.resultSourceType || "mock");
+          let merged: TaskResult | null = mapServerExecutionResultToTaskResult(
+            apiPrompt,
+            run.result,
+            rst,
+            run.templateSuggestion
+          );
+
+          if (merged?.kind === "content") {
+            merged = {
+              ...merged,
+              metadata: {
+                ...(merged.metadata ?? {}),
+                taskType: "content",
+                ...(isSeoLiteArticleExecutionPrompt(prompt)
+                  ? { qualityHint: "seo_lite_v1", structure: "article_basic" }
+                  : {}),
+                ...(lightMemoryHits && lightMemoryHits.length > 0
+                  ? {
+                      memoryInfluence: true,
+                      memoryHits: lightMemoryHits.slice(0, 2)
+                    }
+                  : {})
+              }
+            };
+          }
+
+          const isArticlePack = isSeoLiteArticleExecutionPrompt(prompt);
           if (merged?.kind === "content" && isArticlePack) {
             const theme = extractArticleThemeFromPrompt(prompt);
             const raw =
@@ -730,39 +735,32 @@ export function useExecutionSession(): UseExecutionSessionReturn {
 
           if (merged) extractLightMemory(merged);
 
+          sharedCoreAuthoritativeRunRef.current = true;
           setSnap((s) => ({
             ...s,
             currentTaskId: res.id,
+            lastCoreResultRunId: run.runId,
+            mockStatus: "success",
+            lastErrorMessage: "",
+            lastAuthEscalation: null,
             ...(merged ? { currentResult: merged } : {})
           }));
-          schedule(timersRef.current, () => {
-            if (generationRef.current !== gen) return;
-            if (streamRawRef.current.trim()) return;
-            setSnap((s) => {
-              if (generationRef.current !== gen) return s;
-              if (s.mockStatus !== "running") return s;
-              return {
-                ...s,
-                mockStatus: "success",
-                lastErrorMessage: "",
-                lastAuthEscalation: null
-              };
-            });
-          }, MOCK_RUN_MS);
-        })
-        .catch((e) => {
+        } catch (e) {
           if (generationRef.current !== gen) return;
+          sharedCoreAuthoritativeRunRef.current = false;
           setSnap((s) => ({
             ...s,
             mockStatus: "error",
+            userPaused: false,
             lastErrorMessage: axiosDetail(e),
             currentTaskId: "",
             lastAuthEscalation: null
           }));
-        });
-    }, MOCK_RUN_MS);
-  },
-  []);
+        }
+      })();
+    },
+    []
+  );
 
   const armPipeline = useCallback(
     async (

@@ -1,7 +1,7 @@
 import type { FormalTemplateRecord } from "../models/formalTemplateRecord";
 import type { TemplateDomainModel } from "../models/templateDomainModel";
 
-/** 将 Core `/templates/list` 单行 normalize 为正式记录；非法则返回 null。 */
+/** 将 Core模板列表单行（含 GET /v1/templates 归一项）normalize 为正式记录；非法则返回 null。 */
 export function normalizeFormalTemplateRow(raw: unknown): FormalTemplateRecord | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;

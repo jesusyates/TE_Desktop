@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { AuthMeFailure, fetchAuthMeValidated, logoutRequest, type AuthMeSuccessBody } from "../services/authApi";
+import { toUserFacingErrorMessage } from "../services/userFacingErrorMessage";
 import {
   defaultMarketForLocale,
   getInitialDisplayLocale,
@@ -19,7 +20,7 @@ import {
 
 export type SessionSyncStatus = "synced" | "refresh_pending";
 
-/** 账户页「基础身份」快照（由 /v1/auth/me 填充，登录态内复用） */
+/** 账户页「基础身份」快照（由 GET /v1/account/session 填充，登录态内复用） */
 export type AccountProfileSnapshot = {
   userId: string;
   email: string;
@@ -52,7 +53,8 @@ function emptyAccountPageCache() {
     accountEntitlement: null as AccountBillingEntitlement | null,
     accountEntitlementFetchedAt: 0,
     accountProfileRefreshing: false,
-    accountEntitlementRevalidating: false
+    accountEntitlementRevalidating: false,
+    accountEntitlementError: null as string | null
   };
 }
 
@@ -77,9 +79,11 @@ type AuthState = {
   accountProfileRefreshing: boolean;
   /** 账户页拉取 entitlement 时，仅影响配额区 */
   accountEntitlementRevalidating: boolean;
-  /** MODULE C-3：冷启动读 vault → /auth/me 校验后再置 true */
+  /** 配额/套餐接口失败时局部文案（不阻断身份区） */
+  accountEntitlementError: string | null;
+  /** MODULE C-3：冷启动读 vault → session 校验后再置 true */
   hydrate: () => Promise<void>;
-  /** 将 /v1/auth/me 成功体合并进会话与账户快照 */
+  /** 将 session 成功体合并进会话与账户快照 */
   mergeAuthMeSuccess: (me: AuthMeSuccessBody) => void;
   /**
    * 拉取并合并身份信息。`silent: true` 时不置 `accountProfileRefreshing`（用于本地无快照时补全，不打扰身份区）。
@@ -117,6 +121,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   accountEntitlementFetchedAt: 0,
   accountProfileRefreshing: false,
   accountEntitlementRevalidating: false,
+  accountEntitlementError: null,
 
   mergeAuthMeSuccess: (me) => {
     const u = me.user;
@@ -176,16 +181,53 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (!entStale) return;
 
-    set({ accountEntitlementRevalidating: true });
+    set({ accountEntitlementRevalidating: true, accountEntitlementError: null });
     try {
       const { apiClient } = await import("../services/apiClient");
-      const r = await apiClient.get<AccountBillingEntitlement>("/billing/entitlement");
+      const { normalizeV1ResponseBody } = await import("../services/v1Envelope");
+      const r = await apiClient.get<unknown>("/v1/account/entitlements", { validateStatus: () => true });
+      if (r.status < 200 || r.status >= 300) {
+        const msg =
+          r.data && typeof r.data === "object" && "message" in r.data
+            ? String((r.data as { message?: unknown }).message ?? "").trim()
+            : "";
+        set({
+          accountEntitlementError: msg ? toUserFacingErrorMessage(msg) : "套餐信息暂时无法加载。"
+        });
+        return;
+      }
+      const data = normalizeV1ResponseBody(r.data) as Record<string, unknown> | null;
+      if (!data || typeof data !== "object") {
+        set({ accountEntitlementError: "套餐信息格式异常。" });
+        return;
+      }
+      const quota =
+        data.quota && typeof data.quota === "object" && !Array.isArray(data.quota)
+          ? (data.quota as Record<string, unknown>)
+          : {};
+      const entitlements =
+        data.entitlements && typeof data.entitlements === "object" && !Array.isArray(data.entitlements)
+          ? (data.entitlements as Record<string, unknown>)
+          : {};
+      const limit = Number(quota.limit);
+      const used = Number(quota.used);
+      const mapped: AccountBillingEntitlement = {
+        user_id: st.userId.trim(),
+        product: "aics",
+        plan: typeof data.plan === "string" && data.plan.trim() ? data.plan.trim() : "free",
+        quota: Number.isFinite(limit) ? limit : 0,
+        used: Number.isFinite(used) ? used : 0,
+        status: typeof entitlements.status === "string" ? entitlements.status : ""
+      };
       set({
-        accountEntitlement: r.data,
-        accountEntitlementFetchedAt: Date.now()
+        accountEntitlement: mapped,
+        accountEntitlementFetchedAt: Date.now(),
+        accountEntitlementError: null
       });
-    } catch {
-      /* 保留已有 entitlement */
+    } catch (e) {
+      set({
+        accountEntitlementError: toUserFacingErrorMessage(e)
+      });
     } finally {
       set({ accountEntitlementRevalidating: false });
     }

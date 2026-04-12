@@ -48,6 +48,7 @@ export const AccountPage = () => {
   const accountEntitlement = useAuthStore((s) => s.accountEntitlement);
   const accountProfileRefreshing = useAuthStore((s) => s.accountProfileRefreshing);
   const accountEntitlementRevalidating = useAuthStore((s) => s.accountEntitlementRevalidating);
+  const accountEntitlementError = useAuthStore((s) => s.accountEntitlementError);
   const refreshAccountProfile = useAuthStore((s) => s.refreshAccountProfile);
   const revalidateAccountEntitlement = useAuthStore((s) => s.revalidateAccountEntitlement);
 
@@ -202,6 +203,11 @@ export const AccountPage = () => {
         </h2>
         <p className="settings-section__lead text-muted mb-2">{u.settings.billingFoot}</p>
         <Card title={u.settings.billingCard}>
+          {accountEntitlementError ? (
+            <p className="text-danger text-sm mb-2" role="alert">
+              {accountEntitlementError}
+            </p>
+          ) : null}
           {accountEntitlementRevalidating && !accountEntitlement ? (
             <p className="text-muted text-sm mb-0">{u.settings.loading}</p>
           ) : null}
@@ -230,7 +236,7 @@ export const AccountPage = () => {
                 </span>
               </div>
             </div>
-          ) : accountEntitlementRevalidating ? null : (
+          ) : accountEntitlementRevalidating ? null : accountEntitlementError ? null : (
             <p className="auto-placeholder">{u.settings.entErr}</p>
           )}
           <p className="text-muted text-sm mt-3 mb-0">{u.console.usageRechargeSoon}</p>

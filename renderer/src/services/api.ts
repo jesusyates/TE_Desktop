@@ -6,62 +6,46 @@ import type {
   PermissionCheckResult,
   PermissionKey
 } from "../modules/permissions/permissionTypes";
-import type { TaskResult } from "../modules/result/resultTypes";
 import type { ParsedAiContentSuccess } from "../modules/ai/aiContentWireTypes";
 import {
   formatAiContentTransportMessage,
-  parseAiContentGatewayJson,
   parsedFailureToInvokeError
 } from "../modules/ai/parseAiContentWire";
+import {
+  mapAiContentActionToExecutePrompt,
+  parseSharedCoreAiExecuteResponse
+} from "../modules/ai/parseSharedCoreAiExecute";
 import type { TaskMode } from "../types/taskMode";
+import type { TaskAttachmentMeta } from "../types/task";
 import type { CoreMemoryHintsWire } from "../modules/memory/workbenchCoreMemoryHints";
-import { AI_GATEWAY_BASE_URL } from "../config/runtimeEndpoints";
-import { adaptCorePermissionPayload, adaptCoreSafetyPayload } from "./coreCheckAdapter";
-import { aiGatewayClient } from "./apiClient";
+import { apiClient } from "./apiClient";
+import { normalizeV1ResponseBody } from "./v1Envelope";
+import { analyzeTask } from "../modules/workbench/analyzer/taskAnalyzer";
+import { planTask } from "../modules/workbench/planner/taskPlanner";
+import { executionPlanToTaskPlanMirror } from "../modules/workbench/execution/executionPlanAdapters";
+import { runSafetyCheck } from "../modules/safety/safetyChecker";
+import { checkPermissions } from "../modules/permissions/permissionChecker";
+import { getCapabilityPermissions } from "../modules/permissions/permissionRegistry";
 import type { ExecutionTrustAssessment } from "../modules/trust/trustTypes";
-import { normalizeExecutionTrust } from "../modules/trust/trustTypes";
 import type {
   ControllerAlignmentBundle,
   ControllerPlanV1
 } from "../modules/controller";
 import type { IntelOrchestrationTrace } from "../modules/contentIntelligence/types";
+import { runIntelPreFlight } from "../modules/contentIntelligence";
 import type { HistoryListItemDto } from "./history.api";
 import type { RouterDecision } from "../modules/router/routerTypes";
 
-function normalizeRouterDecision(raw: unknown): RouterDecision | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const o = raw as Record<string, unknown>;
-  const executionMode = o.executionMode;
-  if (executionMode !== "cloud_ai" && executionMode !== "local_only" && executionMode !== "hybrid") {
-    return undefined;
-  }
-  if (typeof o.model !== "string" || typeof o.reason !== "string") return undefined;
-  const praw = o.params;
-  const p = praw && typeof praw === "object" ? (praw as Record<string, unknown>) : {};
-  const temperature = typeof p.temperature === "number" ? p.temperature : 0.7;
-  const maxTokens = typeof p.maxTokens === "number" ? p.maxTokens : 2000;
-  const fbRaw = o.fallback;
-  const fallback =
-    fbRaw && typeof fbRaw === "object"
-      ? { mode: String((fbRaw as Record<string, unknown>).mode ?? "") }
-      : undefined;
-  return {
-    executionMode,
-    model: o.model,
-    params: { temperature, maxTokens },
-    reason: o.reason,
-    ...(fallback?.mode ? { fallback } : {})
-  };
-}
-
 /**
- * D-7-3A：AI 网关经 `aiGatewayClient`（MODULE C-2：与 Shared Core `apiClient` 同源请求头策略）。
- * D-7-4Z：本文件所指服务为 **secondary persistence / audit / 旁路增强**；**权威执行真相源**为 `useExecutionSession` 本地会话，网关成败不反向定义执行是否启动或成功。
- * D-7-5A：基址见 `config/runtimeEndpoints`（`AI_GATEWAY_BASE_URL`）。
+ * P1 / P2 / P3：Memory、模板、Content Intelligence 预检、系统策略、审计旁路已收口或本地化；业务 API 走 Shared Core `apiClient`。P0 已迁 `/result`、`/task`、`/memory-record` 写入。
+ * **G-1 内容生成**（`invokeAiContentOnCore`）走 **`apiClient` → `POST /v1/ai/execute`**（Shared Core）。
+ * **Workbench Analyze / Plan / Safety / Permission** 为 renderer 本地规则。
+ * D-7-4Z：**权威执行真相源**仍为 `useExecutionSession`。
+ * D-7-5A：`API_BASE_URL` 与 `SHARED_CORE_BASE_URL` 同源，见 `config/runtimeEndpoints`。
  */
-export const API_BASE_URL = AI_GATEWAY_BASE_URL;
+export { API_BASE_URL } from "../config/runtimeEndpoints";
 
-/** G-1：POST /ai/content — 经 AI 网关统一 Router（桌面禁止直连模型） */
+/** G-1：`POST /v1/ai/execute`（Shared Core）；调用方仍传 `action`+`prompt`，由 `mapAiContentActionToExecutePrompt` 映射。 */
 export type InvokeAiContentOnCoreInput = {
   action: "generate" | "summarize";
   prompt: string;
@@ -70,30 +54,28 @@ export type InvokeAiContentOnCoreInput = {
 export type InvokeAiContentOnCoreResult = ParsedAiContentSuccess;
 
 /**
- * G-1A：调用 Core `/ai/content` — 响应仅经 `parseAiContentGatewayJson` 归一（generate / summarize 同源策略）。
+ * G-1A：Shared Core `POST /v1/ai/execute`；响应经 `parseSharedCoreAiExecuteResponse` 归一为 `ParsedAiContentSuccess`。
  * 业务失败与非法成功响应均抛错 → 执行步 error，无假完成。
  */
 export async function invokeAiContentOnCore(
   input: InvokeAiContentOnCoreInput
 ): Promise<InvokeAiContentOnCoreResult> {
-  const payload = { action: input.action, prompt: input.prompt };
+  const payload = { prompt: mapAiContentActionToExecutePrompt(input.action, input.prompt) };
   let data: unknown;
   try {
-    const { data: d } = await aiGatewayClient.post<unknown>("/ai/content", payload);
+    const { data: d } = await apiClient.post<unknown>("/v1/ai/execute", payload);
     data = d;
   } catch (e) {
     if (isAxiosError(e) && e.response?.data !== undefined) {
-      const parsed = parseAiContentGatewayJson(e.response.data);
+      const parsed = parseSharedCoreAiExecuteResponse(e.response.data);
       if (!parsed.ok) {
         throw parsedFailureToInvokeError(parsed.value);
       }
     }
-    throw new Error(
-      formatAiContentTransportMessage("ai_content_transport", axiosErrorDetail(e))
-    );
+    throw new Error(formatAiContentTransportMessage("ai_execute_transport", axiosErrorDetail(e)));
   }
 
-  const parsed = parseAiContentGatewayJson(data);
+  const parsed = parseSharedCoreAiExecuteResponse(data);
   if (!parsed.ok) {
     throw parsedFailureToInvokeError(parsed.value);
   }
@@ -136,12 +118,25 @@ function axiosErrorDetail(e: unknown): string {
   return (status != null ? `HTTP ${status}: ` : "") + (e.message || "请求失败");
 }
 
-/** D-7-3B：POST /analyze 请求体（附件仅元数据） */
+/** Workbench 附件轻量描述（历史类型名 OnCore；用于 **本地** analyze/plan，非远端 /analyze） */
 export type AnalyzeOnCoreAttachment = {
   name?: string;
   mimeType?: string;
   size?: number;
 };
+
+function wireAttachmentsToTaskMeta(att?: AnalyzeOnCoreAttachment[]): TaskAttachmentMeta[] | undefined {
+  if (!att?.length) return undefined;
+  return att.map((a, i) => ({
+    id: `wire_${i}`,
+    name: (String(a.name ?? "").trim() || `attachment_${i}`).slice(0, 512),
+    size: typeof a.size === "number" && Number.isFinite(a.size) ? Math.max(0, a.size) : 0,
+    mimeType:
+      typeof a.mimeType === "string" && a.mimeType.trim()
+        ? a.mimeType.trim()
+        : "application/octet-stream"
+  }));
+}
 
 export type AnalyzeOnCoreInput = {
   prompt: string;
@@ -149,44 +144,17 @@ export type AnalyzeOnCoreInput = {
   attachments?: AnalyzeOnCoreAttachment[];
   /** D-4：Workbench 组装的轻量 Memory hints（正式 /memory 契约） */
   memoryHints?: CoreMemoryHintsWire;
-  /** Controller v1：进入 Core 请求上下文，用于对拍与审计 */
+  /** Controller v1：本地对拍与审计预留 */
   controllerDecision?: ControllerPlanV1;
 };
 
-/** Task Clarification v1：与 Core `/analyze` 的 `questions` 对齐 */
+/** Task Clarification v1：预留（若未来接回服务端澄清流） */
 export type ClarificationQuestion = {
   key: string;
   label: string;
   options: Array<{ value: string; label: string }>;
   defaultValue?: string;
 };
-
-function normalizeClarificationQuestions(raw: unknown): ClarificationQuestion[] {
-  if (!Array.isArray(raw)) return [];
-  const out: ClarificationQuestion[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const o = item as Record<string, unknown>;
-    const key = typeof o.key === "string" ? o.key.trim() : "";
-    const label = typeof o.label === "string" ? o.label.trim() : "";
-    if (!key || !label) continue;
-    const optsIn = o.options;
-    if (!Array.isArray(optsIn)) continue;
-    const options: Array<{ value: string; label: string }> = [];
-    for (const opt of optsIn) {
-      if (!opt || typeof opt !== "object") continue;
-      const op = opt as Record<string, unknown>;
-      const value = typeof op.value === "string" ? op.value.trim() : "";
-      const ol = typeof op.label === "string" ? op.label.trim() : "";
-      if (value && ol) options.push({ value, label: ol });
-    }
-    if (!options.length) continue;
-    const dvRaw = typeof o.defaultValue === "string" ? o.defaultValue.trim() : "";
-    const defaultValue = options.some((x) => x.value === dvRaw) ? dvRaw : options[0]!.value;
-    out.push({ key, label, options, defaultValue });
-  }
-  return out;
-}
 
 export type AnalyzeTaskOnCoreResult =
   | {
@@ -206,143 +174,40 @@ export type AnalyzeTaskOnCoreResult =
       routerDecision?: RouterDecision;
     };
 
-/** D-7-3D：POST /plan */
+/** 本地 plan 入参（历史标签 OnCore） */
 export type PlanOnCoreInput = {
   prompt: string;
   requestedMode?: TaskMode;
   attachments?: AnalyzeOnCoreAttachment[];
-  /** 有则后端直接规划；无则后端先 analyze */
+  /** 有则直接规划；无则先本地 analyze */
   analysis?: TaskAnalysisResult;
   memoryHints?: CoreMemoryHintsWire;
   controllerDecision?: ControllerPlanV1;
 };
 
-/** D-7-3E：POST /safety-check */
+/** 本地 safety 入参（历史标签 OnCore） */
 export type SafetyCheckOnCoreInput = {
   prompt: string;
   analysis?: TaskAnalysisResult;
   plan?: TaskPlan;
 };
 
-export type CoreTaskResponse = {
-  success?: boolean;
-  message?: string;
-  [key: string]: unknown;
-};
-
 /**
- * POST /task — 提交用户 prompt，JSON body `{ prompt }`。
- * 失败时抛错；**不得**用作是否 `session.start` 的门闩 — 请用 `recordTaskPromptToAiGatewayBestEffort`。
- */
-export async function sendTaskToCore(
-  prompt: string,
-  extras?: { routerDecision?: RouterDecision }
-): Promise<CoreTaskResponse> {
-  try {
-    const body: Record<string, unknown> = { prompt };
-    if (extras?.routerDecision != null) body.routerDecision = extras.routerDecision;
-    const { data } = await aiGatewayClient.post<CoreTaskResponse>("/task", body);
-    return (data && typeof data === "object" ? data : {}) as CoreTaskResponse;
-  } catch (e) {
-    throw new Error(axiosErrorDetail(e));
-  }
-}
-
-/**
- * D-7-4Z：`POST /task` 仅作旁路记录；**不影响**本地会话启动/成败，失败只打日志（不抛错）。
- */
-export async function recordTaskPromptToAiGatewayBestEffort(
-  prompt: string,
-  routerDecision?: RouterDecision
-): Promise<void> {
-  const p = prompt.trim();
-  if (!p) return;
-  try {
-    const data = await sendTaskToCore(p, routerDecision != null ? { routerDecision } : undefined);
-    if (import.meta.env.DEV) {
-      console.log("[D-7-4Z] AI gateway /task record ok", data?.success === true, data?.message);
-    }
-  } catch (e) {
-    console.error(
-      "[D-7-4Z] AI gateway /task record failed (local session unaffected)",
-      e instanceof Error ? e.message : e
-    );
-  }
-}
-
-/**
- * D-7-3B：POST /analyze — Core Backend 规则版 Analyzer。
- * 失败时抛错，由调用方捕获以保证不阻塞本地 session。
- * Task Clarification：可能返回 `requireClarification` + `questions`（须先于 TrustGate 处理）。
+ * D-7-3B：Workbench Analyzer — **本地规则**（`analyzeTask`）；无网络依赖。
  */
 export async function analyzeTaskOnCore(input: AnalyzeOnCoreInput): Promise<AnalyzeTaskOnCoreResult> {
-  const payload: Record<string, unknown> = { prompt: input.prompt };
-  if (input.requestedMode != null) payload.requestedMode = input.requestedMode;
-  if (input.attachments?.length) payload.attachments = input.attachments;
-  if (input.memoryHints && Object.keys(input.memoryHints).length > 0) {
-    payload.memoryHints = input.memoryHints;
-  }
-  if (input.controllerDecision != null) {
-    payload.controllerDecision = input.controllerDecision;
-  }
-
-  let obj: Record<string, unknown>;
-  try {
-    const { data } = await aiGatewayClient.post<unknown>("/analyze", payload);
-    obj = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  } catch (e) {
-    throw new Error(axiosErrorDetail(e));
-  }
-
-  if (obj.success !== true) {
-    const msg =
-      "message" in obj && typeof obj.message === "string" ? obj.message : "invalid analyze response";
-    throw new Error(msg);
-  }
-
-  if (obj.requireClarification === true) {
-    const questions = normalizeClarificationQuestions(obj.questions);
-    if (
-      questions.length > 0 &&
-      obj.analysis &&
-      typeof obj.analysis === "object"
-    ) {
-      const trust = normalizeExecutionTrust(obj.trust) ?? undefined;
-      const controllerAlignment = normalizeControllerAlignmentBundle(obj.controllerAlignment);
-      const routerDecision = normalizeRouterDecision(obj.routerDecision);
-      return {
-        success: true,
-        requireClarification: true,
-        questions,
-        analysis: obj.analysis as TaskAnalysisResult,
-        ...(trust ? { trust } : {}),
-        ...(controllerAlignment ? { controllerAlignment } : {}),
-        ...(routerDecision ? { routerDecision } : {})
-      };
-    }
-  }
-
-  if (!obj.analysis || typeof obj.analysis !== "object") {
-    const msg =
-      "message" in obj && typeof obj.message === "string" ? obj.message : "invalid analyze response";
-    throw new Error(msg);
-  }
-
-  const trust = normalizeExecutionTrust(obj.trust) ?? undefined;
-  const controllerAlignment = normalizeControllerAlignmentBundle(obj.controllerAlignment);
-  const routerDecision = normalizeRouterDecision(obj.routerDecision);
-  return {
-    success: true,
-    analysis: obj.analysis as TaskAnalysisResult,
-    ...(trust ? { trust } : {}),
-    ...(controllerAlignment ? { controllerAlignment } : {}),
-    ...(routerDecision ? { routerDecision } : {})
-  };
+  void input.controllerDecision;
+  void input.memoryHints;
+  const analysis = analyzeTask({
+    prompt: input.prompt,
+    attachments: wireAttachmentsToTaskMeta(input.attachments),
+    requestedMode: input.requestedMode
+  });
+  return { success: true, analysis };
 }
 
 /**
- * D-7-3D：POST /plan — Core Backend 规则版 Planner。
- * 失败时抛错，由调用方捕获以保证不阻塞本地 session。
+ * D-7-3D：Workbench Planner — **本地** `planTask` → `executionPlanToTaskPlanMirror`（`TaskPlan`），替代旧 `POST /plan`。
  */
 export async function planTaskOnCore(input: PlanOnCoreInput): Promise<{
   success: true;
@@ -352,115 +217,50 @@ export async function planTaskOnCore(input: PlanOnCoreInput): Promise<{
   controllerAlignment?: ControllerAlignmentBundle;
   routerDecision?: RouterDecision;
 }> {
-  const payload: Record<string, unknown> = { prompt: input.prompt };
-  if (input.requestedMode != null) payload.requestedMode = input.requestedMode;
-  if (input.attachments?.length) payload.attachments = input.attachments;
-  if (input.analysis != null) payload.analysis = input.analysis;
-  if (input.memoryHints && Object.keys(input.memoryHints).length > 0) {
-    payload.memoryHints = input.memoryHints;
-  }
-  if (input.controllerDecision != null) {
-    payload.controllerDecision = input.controllerDecision;
-  }
-
-  let obj: Record<string, unknown>;
-  try {
-    const { data } = await aiGatewayClient.post<unknown>("/plan", payload);
-    obj = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  } catch (e) {
-    throw new Error(axiosErrorDetail(e));
-  }
-
-  if (
-    obj.success !== true ||
-    !obj.analysis ||
-    typeof obj.analysis !== "object" ||
-    !obj.plan ||
-    typeof obj.plan !== "object"
-  ) {
-    const msg =
-      "message" in obj && typeof obj.message === "string" ? obj.message : "invalid plan response";
-    throw new Error(msg);
-  }
-
-  const trust = normalizeExecutionTrust(obj.trust) ?? undefined;
-  const controllerAlignment = normalizeControllerAlignmentBundle(obj.controllerAlignment);
-  const routerDecision = normalizeRouterDecision(obj.routerDecision);
-  return {
-    success: true,
-    analysis: obj.analysis as TaskAnalysisResult,
-    plan: obj.plan as TaskPlan,
-    ...(trust ? { trust } : {}),
-    ...(controllerAlignment ? { controllerAlignment } : {}),
-    ...(routerDecision ? { routerDecision } : {})
-  };
+  void input.controllerDecision;
+  void input.memoryHints;
+  const analysis =
+    input.analysis ??
+    analyzeTask({
+      prompt: input.prompt,
+      attachments: wireAttachmentsToTaskMeta(input.attachments),
+      requestedMode: input.requestedMode
+    });
+  const ep = planTask(analysis, { taskId: "workbench-plan-local" });
+  const plan = executionPlanToTaskPlanMirror(ep);
+  return { success: true, analysis, plan };
 }
 
 /**
- * Content Intelligence：POST /content-intelligence/preflight — 服务端权威预检（与 IntelOrchestrationTrace 对齐）。
+ * P3：Content Intelligence 预检 — 仅本地可解释启发式（`runIntelPreFlight`），不调用旧网关。
  */
 export async function contentIntelPreflightOnCore(input: {
   prompt: string;
   historyItems: HistoryListItemDto[];
 }): Promise<IntelOrchestrationTrace> {
-  const payload = {
-    prompt: input.prompt.trim(),
-    historyItems: input.historyItems.map((x) => ({
-      historyId: x.historyId,
-      prompt: x.prompt,
-      preview: x.preview ?? "",
-      status: x.status
-    }))
-  };
-  let obj: Record<string, unknown>;
-  try {
-    const { data } = await aiGatewayClient.post<unknown>("/content-intelligence/preflight", payload);
-    obj = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  } catch (e) {
-    throw new Error(axiosErrorDetail(e));
-  }
-  if (obj.success !== true || obj.trace == null || typeof obj.trace !== "object") {
-    const msg =
-      "message" in obj && typeof obj.message === "string" ? obj.message : "invalid preflight response";
-    throw new Error(msg);
-  }
-  return obj.trace as IntelOrchestrationTrace;
+  return runIntelPreFlight(input.prompt.trim(), input.historyItems);
 }
 
 /**
- * D-7-3E：POST /safety-check — Core 规则版 Safety。
- * 失败时抛错，由调用方捕获以保证不阻塞本地 session。
+ * D-7-3E：Workbench Safety — **本地** `runSafetyCheck`，替代旧 `POST /safety-check`。
  */
 export async function safetyCheckOnCore(
   input: SafetyCheckOnCoreInput
 ): Promise<{ success: true; safety: SafetyCheckResult }> {
-  const payload: Record<string, unknown> = { prompt: input.prompt };
-  if (input.analysis != null) payload.analysis = input.analysis;
-  if (input.plan != null) payload.plan = input.plan;
-
-  let obj: Record<string, unknown>;
-  try {
-    const { data } = await aiGatewayClient.post<unknown>("/safety-check", payload);
-    obj = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  } catch (e) {
-    throw new Error(axiosErrorDetail(e));
-  }
-
-  if (obj.success !== true) {
-    const msg =
-      "message" in obj && typeof obj.message === "string" ? obj.message : "invalid safety response";
-    throw new Error(msg);
-  }
-
-  const safety = adaptCoreSafetyPayload(obj.safety);
-  if (!safety) {
-    throw new Error("invalid safety payload");
-  }
-
+  const analysis =
+    input.analysis ??
+    analyzeTask({
+      prompt: input.prompt,
+      requestedMode: "auto"
+    });
+  const plan =
+    input.plan ??
+    executionPlanToTaskPlanMirror(planTask(analysis, { taskId: "safety-check-local" }));
+  const safety = runSafetyCheck({ prompt: input.prompt, plan });
   return { success: true, safety };
 }
 
-/** D-7-3F：POST /permission-check */
+/** 本地 permission 入参（历史标签 OnCore） */
 export type PermissionCheckOnCoreInput = {
   capabilityId: string;
   userGrantedPermissions?: PermissionKey[];
@@ -468,53 +268,22 @@ export type PermissionCheckOnCoreInput = {
 };
 
 /**
- * D-7-3F：Core 规则版 Permission。
- * 失败时抛错，由调用方捕获以保证不阻塞本地 session。
+ * D-7-3F：Workbench Permission — **本地** `checkPermissions` + `permissionRegistry`，替代旧 `POST /permission-check`。
  */
 export async function permissionCheckOnCore(
   input: PermissionCheckOnCoreInput
 ): Promise<{ success: true; permission: PermissionCheckResult }> {
-  const payload: Record<string, unknown> = {
+  const capabilityRequiredPermissions = getCapabilityPermissions(input.capabilityId) ?? [];
+  const permission = checkPermissions({
     capabilityId: input.capabilityId,
-    userGrantedPermissions: input.userGrantedPermissions ?? []
-  };
-  if (input.platformEnabledPermissions != null) {
-    payload.platformEnabledPermissions = input.platformEnabledPermissions;
-  }
-
-  let obj: Record<string, unknown>;
-  try {
-    const { data } = await aiGatewayClient.post<unknown>("/permission-check", payload);
-    obj = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  } catch (e) {
-    throw new Error(axiosErrorDetail(e));
-  }
-
-  if (obj.success !== true) {
-    const msg =
-      "message" in obj && typeof obj.message === "string"
-        ? obj.message
-        : "invalid permission response";
-    throw new Error(msg);
-  }
-
-  const permission = adaptCorePermissionPayload(obj.permission);
-  if (!permission) {
-    throw new Error("invalid permission payload");
-  }
-
+    userGrantedPermissions: input.userGrantedPermissions ?? [],
+    platformEnabledPermissions: input.platformEnabledPermissions ?? [],
+    capabilityRequiredPermissions
+  });
   return { success: true, permission };
 }
 
-/** D-7-3G：POST /result */
-export type PostResultToCoreInput = {
-  runId?: string;
-  prompt: string;
-  result: TaskResult;
-  stepResults?: Record<string, TaskResult>;
-};
-
-/** D-7-3G / D-2：POST /memory-record — 须经 memoryWriteService 收口（禁止页面直拼任意 body） */
+/** D-2：Memory 写入载荷 — 须经 memoryWriteService 收口；由 `postMemoryRecordToCore` 映射到 `POST /v1/memory/entries`。 */
 export type PostMemoryRecordToCoreInput = {
   prompt: string;
   memoryType?: string;
@@ -536,53 +305,55 @@ export type PostMemoryRecordToCoreInput = {
   success?: boolean;
 };
 
-function assertCoreWriteBody(body: unknown): void {
-  const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  if (obj.success !== true) {
-    const msg =
-      "message" in obj && typeof obj.message === "string" ? obj.message : "invalid response";
-    throw new Error(msg);
-  }
-}
-
 /**
- * D-7-3G：归档 TaskResult 到 Core（失败抛错，由调用方 void/catch）。
- */
-export async function postResultToCore(input: PostResultToCoreInput): Promise<{ success: true }> {
-  const payload: Record<string, unknown> = {
-    prompt: input.prompt,
-    result: input.result
-  };
-  if (input.runId != null) payload.runId = input.runId;
-  if (input.stepResults != null) payload.stepResults = input.stepResults;
-
-  let body: unknown;
-  try {
-    const { data } = await aiGatewayClient.post<unknown>("/result", payload);
-    body = data;
-  } catch (e) {
-    if (isAxiosError(e)) body = e.response?.data;
-    else throw e instanceof Error ? e : new Error(axiosErrorDetail(e));
-  }
-  assertCoreWriteBody(body);
-  return { success: true };
-}
-
-/**
- * D-7-3G / D-2：行为摘要写入 AICS Core Memory。
+ * D-2：行为摘要写入 Shared Core `POST /v1/memory/entries`（`appendMemoryEntry`）。
  * **禁止** 业务页面 / 会话钩子直调；统一经 `modules/memory/memoryWriteService`。
  */
 export async function postMemoryRecordToCore(
   input: PostMemoryRecordToCoreInput
 ): Promise<{ success: true }> {
-  let body: unknown;
+  const key = (input.key ?? `mem:${String(input.memoryType ?? "note")}`).trim().slice(0, 200);
+  if (!key) throw new Error("memory_key_required");
+
+  const value: Record<string, unknown> = {};
+  const put = (k: string, v: unknown) => {
+    if (v === undefined || v === null) return;
+    if (typeof v === "string" && v.trim() === "") return;
+    value[k] = v;
+  };
+  put("memoryType", input.memoryType);
+  put("prompt", input.prompt?.trim());
+  put("source", input.source);
+  put("sourceId", input.sourceId);
+  put("memoryId", input.memoryId);
+  put("requestedMode", input.requestedMode);
+  put("resolvedMode", input.resolvedMode);
+  put("intent", input.intent);
+  put("planId", input.planId);
+  if (Array.isArray(input.stepIds)) value.stepIds = input.stepIds;
+  if (Array.isArray(input.capabilityIds)) value.capabilityIds = input.capabilityIds;
+  put("resultKind", input.resultKind);
+  if (typeof input.success === "boolean") value.success = input.success;
+  put("createdAt", input.createdAt);
+  put("updatedAt", input.updatedAt);
+  if (typeof input.isActive === "boolean") value.isActive = input.isActive;
+  if (input.value !== undefined) value.payload = input.value;
+
+  let raw: unknown;
   try {
-    const { data } = await aiGatewayClient.post<unknown>("/memory-record", input);
-    body = data;
+    const { data } = await apiClient.post<unknown>("/v1/memory/entries", { key, value });
+    raw = data;
   } catch (e) {
-    if (isAxiosError(e)) body = e.response?.data;
-    else throw e instanceof Error ? e : new Error(axiosErrorDetail(e));
+    if (isAxiosError(e) && e.response?.data && typeof e.response.data === "object") {
+      const d = e.response.data as Record<string, unknown>;
+      const msg = typeof d.message === "string" ? d.message : "memory_append_failed";
+      throw new Error(msg);
+    }
+    throw e instanceof Error ? e : new Error(axiosErrorDetail(e));
   }
-  assertCoreWriteBody(body);
+  const inner = normalizeV1ResponseBody(raw) as Record<string, unknown> | null;
+  if (!inner || typeof inner !== "object" || inner.item == null) {
+    throw new Error("memory_append_invalid_response");
+  }
   return { success: true };
 }

@@ -21,6 +21,45 @@ function normalizeRow(r) {
   };
 }
 
+/**
+ * 云镜像 / 历史行常见缺口：status 大小写、quota/used 为 null → Number成 0 导致「永远额度用尽」。
+ * 仅修正内存返回，不写回 DB；显式 plan none/blocked 不抬 quota。
+ */
+function sanitizeEntitlementRecord(n) {
+  if (!n || typeof n !== "object") return n;
+  const cfg = config();
+  const defaultQ =
+    Number.isFinite(Number(cfg.quotaDefaultTokens)) && Number(cfg.quotaDefaultTokens) > 0
+      ? Number(cfg.quotaDefaultTokens)
+      : 100_000;
+  const plan = String(n.plan ?? "free").trim().toLowerCase() || "free";
+  let status;
+  if (n.status == null || String(n.status).trim() === "") {
+    status = "active";
+  } else {
+    status = String(n.status).trim().toLowerCase();
+  }
+  let quota = Number(n.quota);
+  let used = Number(n.used);
+  if (!Number.isFinite(used) || used < 0) used = 0;
+  const blockedPlan = plan === "none" || plan === "blocked";
+  if (!Number.isFinite(quota) || quota < 1) {
+    quota = blockedPlan ? 0 : defaultQ;
+  }
+  return {
+    ...n,
+    plan,
+    status,
+    quota,
+    used
+  };
+}
+
+function finalizeRow(row) {
+  if (!row) return null;
+  return sanitizeEntitlementRecord(row);
+}
+
 function toCloudPayload(local) {
   const now = new Date().toISOString();
   return {
@@ -115,23 +154,25 @@ async function getForProduct(userId, product, requestId = null) {
   const local = normalizeRow(localRaw);
 
   if (mode === "local_only" || !isSupabaseConfigured()) {
-    return local;
+    return finalizeRow(local);
   }
 
   if (mode === "cloud_primary") {
     try {
       const cloud = await entitlementAdapter.fetchByUserProduct(uid, prod);
       if (cloud) {
-        return normalizeRow({
-          user_id: cloud.user_id,
-          product: cloud.product,
-          plan: cloud.plan,
-          quota: cloud.quota,
-          used: cloud.used,
-          status: cloud.status,
-          created_at: cloud.created_at,
-          updated_at: cloud.updated_at
-        });
+        return finalizeRow(
+          normalizeRow({
+            user_id: cloud.user_id,
+            product: cloud.product,
+            plan: cloud.plan,
+            quota: cloud.quota,
+            used: cloud.used,
+            status: cloud.status,
+            created_at: cloud.created_at,
+            updated_at: cloud.updated_at
+          })
+        );
       }
     } catch (e) {
       logStorageDiff({
@@ -144,7 +185,7 @@ async function getForProduct(userId, product, requestId = null) {
         requestId
       });
     }
-    return local;
+    return finalizeRow(local);
   }
 
   /** dual_write：优先云；漂移时以本地计费为准并尝试修复云副本 */
@@ -167,7 +208,7 @@ async function getForProduct(userId, product, requestId = null) {
         cn.status === local.status &&
         cn.quota === local.quota &&
         cn.used === local.used;
-      if (aligned) return cn;
+      if (aligned) return finalizeRow(cn);
       logStorageDiff({
         userId: uid,
         entity: "entitlement",
@@ -190,7 +231,7 @@ async function getForProduct(userId, product, requestId = null) {
           requestId
         });
       }
-      return local;
+      return finalizeRow(local);
     }
   } catch (e) {
     logStorageDiff({
@@ -205,7 +246,7 @@ async function getForProduct(userId, product, requestId = null) {
   }
 
   scheduleEntitlementCloudMirror(uid, prod, requestId);
-  return local;
+  return finalizeRow(local);
 }
 
 /** @param {string} userId @param {string|null} [requestId] */
@@ -221,7 +262,7 @@ async function create(data, requestId) {
   if (!uid) throw new Error("userId required");
   const local = normalizeRow(coreEntitlementStore.getOrCreate(uid, prod));
   scheduleEntitlementCloudMirror(uid, prod, requestId);
-  return local;
+  return finalizeRow(local);
 }
 
 async function update(data, requestId) {

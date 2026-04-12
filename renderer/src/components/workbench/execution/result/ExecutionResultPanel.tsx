@@ -6,14 +6,17 @@ import type { AuthEscalationKind } from "../../../../services/authEscalation";
 import { adaptResult, adaptSteps } from "../../../../execution/session/adapters";
 import { toResultCardView, toTaskResult } from "../../../../modules/result/resultAdapters";
 import type { TaskResult } from "../../../../modules/result/resultTypes";
+import { isMockPlaceholderTaskResult } from "../../../../modules/result/mockResultUi";
 import {
   EXECUTION_RESULT_LEGACY_SOURCE_UNKNOWN_ZH,
   outputTrustHintZh,
   outputTrustSimplifiedSuccessLeadZh,
-  RESULT_SOURCE_ERROR_COPY_ZH,
-  RESULT_SOURCE_FALLBACK_COPY_ZH,
   resultSourceLabelZh
 } from "../../../../modules/result/resultProvenanceUi";
+import {
+  buildDegradedSuccessBanner,
+  buildFailureResultPresentation
+} from "../../../../modules/result/failureResultPresentation";
 import { resolveContentTrustPresentation } from "../../../../modules/result/resultSourcePolicy";
 import type { CoreResultRecord } from "../../../../services/coreResultService";
 import { getCoreResultByRunId } from "../../../../services/coreResultService";
@@ -39,11 +42,11 @@ import {
   isWorkbenchLikelyNetworkError,
   isWorkbenchLikelyTimeoutError
 } from "../../../../modules/workbench/workbenchErrorClassify";
-import { isMockPlaceholderTaskResult } from "../../../../modules/result/mockResultUi";
 import { WorkbenchSourceStrip } from "../../chat/WorkbenchSourceStrip";
 import type { WorkbenchExecutionSourceV1 } from "../../../../services/workbenchUiPersistence";
 import type { RouterDecision } from "../../../../modules/router/routerTypes";
 import { readGoalProjectStore } from "../../../../modules/workbench/activeGoalStore";
+import { SHORT_TASK_UI_SUPPRESS_MS } from "../../../../execution/session/useExecutionSession";
 
 export type ExecutionResultPanelProps = {
   status: ExecutionStatus;
@@ -94,6 +97,10 @@ export type ExecutionResultPanelProps = {
     onStart: () => void;
     onStop: () => void;
   } | null;
+  /** 首页统一入口：统一降级/失败文案，隐藏来源条与工程向元数据 */
+  entryMinimalResultUi?: boolean;
+  /** 简化进行中态（覆盖 validating / queued / running 默认文案） */
+  runningStatusLine?: string | null;
 };
 
 const MOCK_DURATION_DISPLAY = "2.4s";
@@ -150,7 +157,9 @@ export const ExecutionResultPanel = ({
   onSubmitSuggestedPrompt,
   goalRefreshKey = 0,
   resultAssetization = null,
-  workflowChain = null
+  workflowChain = null,
+  entryMinimalResultUi = false,
+  runningStatusLine = null
 }: ExecutionResultPanelProps) => {
   const u = useUiStrings();
   const x = u.console.executionResult;
@@ -186,6 +195,26 @@ export const ExecutionResultPanel = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveNoticeTimerRef = useRef<number | null>(null);
   const saveInFlightRef = useRef(false);
+  /** 首页极简：短于阈值不展示进行中态，避免「闪一下正在处理」 */
+  const [showDelayedProgress, setShowDelayedProgress] = useState(false);
+
+  useEffect(() => {
+    setShowDelayedProgress(false);
+    if (
+      !entryMinimalResultUi ||
+      (status !== "validating" && status !== "queued" && status !== "running")
+    ) {
+      return;
+    }
+    const id = window.setTimeout(() => setShowDelayedProgress(true), SHORT_TASK_UI_SUPPRESS_MS);
+    return () => window.clearTimeout(id);
+  }, [status, entryMinimalResultUi]);
+
+  const showInFlightProgressUi =
+    !entryMinimalResultUi ||
+    showDelayedProgress ||
+    status === "paused" ||
+    status === "stopping";
 
   useEffect(() => {
     setCoreOverlay(null);
@@ -242,11 +271,24 @@ export const ExecutionResultPanel = ({
   const effectiveUnifiedResult = coreOverlay?.result ?? unifiedResult;
   const effectiveStepResults = coreOverlay?.stepResults ?? stepResults;
 
-  const successSourceForMockCheck = effectiveUnifiedResult ?? toTaskResult(streamResult ?? null);
-  const isMockSuccessUi =
-    status === "success" && isMockPlaceholderTaskResult(successSourceForMockCheck);
-
   const f3Content = effectiveUnifiedResult?.kind === "content" ? effectiveUnifiedResult : null;
+
+  const failurePresentation = useMemo(
+    () =>
+      status === "error"
+        ? buildFailureResultPresentation({
+            streamError,
+            lastErrorMessage,
+            unifiedResult: effectiveUnifiedResult ?? undefined
+          })
+        : null,
+    [status, streamError, lastErrorMessage, effectiveUnifiedResult]
+  );
+
+  const degradedBanner = useMemo(() => {
+    if (status !== "success" || !f3Content) return null;
+    return buildDegradedSuccessBanner({ resultSource: f3Content.resultSource });
+  }, [status, f3Content]);
   const trustPresentation = f3Content ? resolveContentTrustPresentation(f3Content) : null;
 
   const resultCard = useMemo(() => {
@@ -332,6 +374,7 @@ export const ExecutionResultPanel = ({
   const activeGoalBanner = useMemo(() => {
     void goalRefreshKey;
     void effectiveUnifiedResult?.metadata;
+    if (entryMinimalResultUi) return null;
     const g = readGoalProjectStore().activeGoal;
     if (!g) return null;
     return (
@@ -339,7 +382,7 @@ export const ExecutionResultPanel = ({
         当前目标：{g.title}（{g.currentCount}/{g.targetCount}）
       </p>
     );
-  }, [goalRefreshKey, effectiveUnifiedResult, status]);
+  }, [goalRefreshKey, effectiveUnifiedResult, status, entryMinimalResultUi]);
 
   const outputTrustExportDisplay = useMemo(
     () =>
@@ -500,16 +543,20 @@ export const ExecutionResultPanel = ({
       {activeGoalBanner}
       {status === "idle" ? <ExecutionEmptyState /> : null}
 
-      {simplifiedPresentation && executionSourceStrip ? (
+      {simplifiedPresentation && executionSourceStrip && !entryMinimalResultUi ? (
         <WorkbenchSourceStrip source={executionSourceStrip} routerDecision={routerDecision} />
       ) : null}
 
-      {(status === "validating" || status === "queued") && (
+      {(status === "validating" || status === "queued") && showInFlightProgressUi && (
         <div className="execution-result-panel__block">
           {simplifiedPresentation ? (
             <>
               <p className="workbench-conversation__status" role="status" aria-live="polite">
-                {status === "validating" ? wt.validating : wt.queued}
+                {entryMinimalResultUi && runningStatusLine
+                  ? runningStatusLine
+                  : status === "validating"
+                    ? wt.validating
+                    : wt.queued}
               </p>
               {simplifiedProgressExtra}
             </>
@@ -522,7 +569,7 @@ export const ExecutionResultPanel = ({
         </div>
       )}
 
-      {(status === "running" || status === "paused" || status === "stopping") && (
+      {(status === "running" || status === "paused" || status === "stopping") && showInFlightProgressUi && (
         <div className="execution-result-panel__block">
           <p
             className={
@@ -534,11 +581,13 @@ export const ExecutionResultPanel = ({
             aria-live="polite"
           >
             {simplifiedPresentation
-              ? status === "running"
-                ? wt.running
-                : status === "paused"
-                  ? wt.paused
-                  : wt.stopping
+              ? entryMinimalResultUi && runningStatusLine && status === "running"
+                ? runningStatusLine
+                : status === "running"
+                  ? wt.running
+                  : status === "paused"
+                    ? wt.paused
+                    : wt.stopping
               : status === "running"
                 ? x.progressRunning
                 : status === "paused"
@@ -561,25 +610,44 @@ export const ExecutionResultPanel = ({
 
       {status === "success" && (
         <div className="execution-result-panel__block">
-          {(() => {
-            const m = effectiveUnifiedResult?.metadata as {
-              goalCompletedMessage?: unknown;
-              goalAssetizationNote?: unknown;
-            } | undefined;
-            const line = typeof m?.goalCompletedMessage === "string" ? m.goalCompletedMessage.trim() : "";
-            const note =
-              typeof m?.goalAssetizationNote === "string" ? m.goalAssetizationNote.trim() : "";
-            if (!line && !note) return null;
-            return (
-              <div className="execution-result-panel__goal-wrap mb-2" role="status">
-                {line ? (
-                  <p className="execution-result-panel__goal-completed text-success font-medium mb-1">{line}</p>
-                ) : null}
-                {note ? <p className="execution-result-panel__goal-asset-note text-muted text-sm mb-0">{note}</p> : null}
-              </div>
-            );
-          })()}
-          {trustPresentation && showExecutionProvenance ? (
+          {!entryMinimalResultUi
+            ? (() => {
+                const m = effectiveUnifiedResult?.metadata as {
+                  goalCompletedMessage?: unknown;
+                  goalAssetizationNote?: unknown;
+                  templateSuggestion?: unknown;
+                } | undefined;
+                const line = typeof m?.goalCompletedMessage === "string" ? m.goalCompletedMessage.trim() : "";
+                const note =
+                  typeof m?.goalAssetizationNote === "string" ? m.goalAssetizationNote.trim() : "";
+                const ts = m?.templateSuggestion;
+                const tsObj = ts && typeof ts === "object" ? (ts as Record<string, unknown>) : null;
+                const tsDesc = tsObj && typeof tsObj.description === "string" ? tsObj.description.trim() : "";
+                const tsId = tsObj && typeof tsObj.templateId === "string" ? tsObj.templateId.trim() : "";
+                if (!line && !note && !tsDesc && !tsId) return null;
+                return (
+                  <div className="execution-result-panel__goal-wrap mb-2" role="status">
+                    {line ? (
+                      <p className="execution-result-panel__goal-completed text-success font-medium mb-1">{line}</p>
+                    ) : null}
+                    {note ? <p className="execution-result-panel__goal-asset-note text-muted text-sm mb-0">{note}</p> : null}
+                    {tsDesc || tsId ? (
+                      <div className="execution-result-panel__template-suggest mt-2" role="region" aria-label="模板建议">
+                        <p className="text-sm font-medium mb-1">模板建议</p>
+                        {tsDesc ? <p className="text-muted text-sm mb-2">{tsDesc}</p> : null}
+                        <Link to="/templates" className="ui-btn ui-btn--secondary text-sm">
+                          前往模板页
+                        </Link>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()
+            : null}
+          {trustPresentation &&
+          showExecutionProvenance &&
+          !entryMinimalResultUi &&
+          !(simplifiedPresentation && degradedBanner) ? (
             <div
               className="execution-result-panel__f3-provenance mb-2"
               role="region"
@@ -618,21 +686,23 @@ export const ExecutionResultPanel = ({
               ) : null}
             </div>
           ) : null}
-          {isMockSuccessUi ? (
-            <>
-              <p
-                className="workbench-mock-result-banner execution-result-panel__mock-banner mb-2"
-                role="status"
-              >
-                {u.workbench.mockResultNotice}
-              </p>
-              {f3Content?.resultSource === "fallback" ? (
-                <p className="text-muted text-sm mb-2" role="note">
-                  {RESULT_SOURCE_FALLBACK_COPY_ZH}
-                </p>
-              ) : null}
-            </>
-          ) : simplifiedPresentation ? (
+          {entryMinimalResultUi &&
+          simplifiedPresentation &&
+          f3Content &&
+          (degradedBanner || isMockPlaceholderTaskResult(effectiveUnifiedResult)) ? (
+            <p className="text-muted text-sm mb-2" role="status">
+              本次结果仅供参考。
+            </p>
+          ) : degradedBanner ? (
+            <div
+              className="workbench-mock-result-banner execution-result-panel__mock-banner mb-2"
+              role="status"
+            >
+              <p className="font-medium mb-1">{degradedBanner.title}</p>
+              <p className="text-sm mb-1">{degradedBanner.primary}</p>
+              <p className="text-muted text-sm mb-0">{degradedBanner.nextStep}</p>
+            </div>
+          ) : simplifiedPresentation && !entryMinimalResultUi ? (
             <p
               className="workbench-conversation__status workbench-conversation__status--done text-success font-medium mb-2"
               role="status"
@@ -647,7 +717,8 @@ export const ExecutionResultPanel = ({
               <ExecutionLogPreview status={status} rawLogs={streamLogs} />
             </div>
           ) : null}
-          {effectiveUnifiedResult?.metadata &&
+          {!entryMinimalResultUi &&
+          effectiveUnifiedResult?.metadata &&
           (effectiveUnifiedResult.metadata as { memoryInfluence?: boolean }).memoryInfluence ===
             true ? (
             <p className="text-muted text-sm mb-2" role="note">
@@ -825,7 +896,8 @@ export const ExecutionResultPanel = ({
               </p>
             ) : null}
           </div>
-          {!simplifiedPresentation &&
+          {!entryMinimalResultUi &&
+          !simplifiedPresentation &&
           effectiveStepResults &&
           Object.keys(effectiveStepResults).length > 0 ? (
             <div className="execution-result-panel__step-results text-muted text-sm">
@@ -846,46 +918,95 @@ export const ExecutionResultPanel = ({
           {successActions ? (
             <div className="execution-result-panel__success-actions">{successActions}</div>
           ) : null}
-          {simplifiedPresentation ? null : (
+          {!entryMinimalResultUi && !simplifiedPresentation ? (
             <div className="execution-result-panel__secondary">
               <p className="execution-result-panel__secondary-label text-muted text-sm">{x.stepStreamSecondary}</p>
               <ExecutionStepStream task={null} running={false} stepsOverride={stepsOverride} />
             </div>
-          )}
+          ) : null}
         </div>
       )}
 
-      {status === "error" && (
+      {status === "error" && failurePresentation ? (
         <div className="execution-result-panel__block">
           <article className="execution-error-card">
-            <h3 className="execution-error-card__title">
-              {simplifiedPresentation ? wt.errorTitle : x.errorTitle}
-            </h3>
-            <p className="execution-error-card__detail text-pre-wrap">
-              {resolveErrorDetail(streamError, lastErrorMessage, x.errorMockFailure, simplifiedPresentation)}
+            {entryMinimalResultUi ? null : (
+              <h3 className="execution-error-card__title">{failurePresentation.title}</h3>
+            )}
+            <p className="execution-error-card__detail">
+              {entryMinimalResultUi ? "这次没有成功，可以再试一次。" : failurePresentation.primary}
             </p>
-            <p className="execution-error-card__detail text-muted text-sm mb-0" role="note">
-              {RESULT_SOURCE_ERROR_COPY_ZH}
-            </p>
-            {simplifiedPresentation ? (() => {
+            {!entryMinimalResultUi && failurePresentation.secondary ? (
+              <p className="execution-error-card__detail text-muted text-sm">{failurePresentation.secondary}</p>
+            ) : null}
+            {!entryMinimalResultUi && failurePresentation.nextStep ? (
+              <p className="execution-error-card__detail text-muted text-sm mb-0" role="note">
+                {failurePresentation.nextStep}
+              </p>
+            ) : null}
+            {!entryMinimalResultUi && simplifiedPresentation ? (() => {
               const rawErr = (streamError?.trim() || lastErrorMessage || "").trim();
               const net = isWorkbenchLikelyNetworkError(rawErr);
               const timeout = isWorkbenchLikelyTimeoutError(rawErr);
               return (
                 <>
                   {net ? (
-                    <p className="execution-error-card__detail text-muted text-sm mb-0" role="note">
+                    <p className="execution-error-card__detail text-muted text-sm mb-0 mt-2" role="note">
                       {wt.errorNetworkHint}
                     </p>
                   ) : null}
                   {timeout && !net ? (
-                    <p className="execution-error-card__detail text-muted text-sm mb-0" role="note">
+                    <p className="execution-error-card__detail text-muted text-sm mb-0 mt-2" role="note">
                       {wt.errorTimeoutHint}
                     </p>
                   ) : null}
                 </>
               );
             })() : null}
+            {(import.meta.env.DEV || !entryMinimalResultUi) && (
+              <details className="execution-error-card__technical mt-3">
+                <summary className="cursor-pointer text-muted text-sm user-select-none">技术详情</summary>
+                <div className="text-muted text-sm mt-2 mb-2">
+                  <p className="mb-1">匹配规则：{failurePresentation.matchedRule}</p>
+                  {effectiveUnifiedResult?.kind === "content" &&
+                  (effectiveUnifiedResult.metadata as Record<string, unknown> | undefined)?.coreResultSourceType ? (
+                    <p className="mb-1">
+                      resultSourceType：
+                      {String(
+                        (effectiveUnifiedResult.metadata as Record<string, unknown>).coreResultSourceType
+                      )}
+                    </p>
+                  ) : null}
+                  {failurePresentation.technical.errorCodeGuess ? (
+                    <p className="mb-1">errorCode：{failurePresentation.technical.errorCodeGuess}</p>
+                  ) : null}
+                  {routerDecision?.model ? (
+                    <p className="mb-1">model：{routerDecision.model}</p>
+                  ) : null}
+                  {(() => {
+                    const m =
+                      effectiveUnifiedResult?.kind === "content"
+                        ? (effectiveUnifiedResult.metadata as Record<string, unknown> | undefined)
+                        : undefined;
+                    const rid = m?.requestId;
+                    return typeof rid === "string" && rid.trim() ? (
+                      <p className="mb-1">requestId：{rid}</p>
+                    ) : null;
+                  })()}
+                </div>
+                {import.meta.env.DEV ? (
+                  <pre className="execution-error-card__dev-raw text-xs text-pre-wrap break-words mb-0 p-2">
+                    {resolveErrorDetail(streamError, lastErrorMessage, x.errorMockFailure, false)}
+                  </pre>
+                ) : (
+                  <p className="text-muted text-sm text-pre-wrap break-words mb-0" role="note">
+                    {failurePresentation.technical.rawCombined
+                      ? failurePresentation.technical.rawCombined
+                      : "（无原始错误文本）"}
+                  </p>
+                )}
+              </details>
+            )}
             {authEscalation === "login" ? (
               <p className="execution-error-card__cta">
                 <Link to="/login?needLogin=1" className="execution-error-card__link">
@@ -901,7 +1022,7 @@ export const ExecutionResultPanel = ({
             )}
           </article>
         </div>
-      )}
+      ) : null}
       {status === "stopped" && (
         <div className="execution-result-panel__block">
           <article className="execution-error-card execution-error-card--muted">

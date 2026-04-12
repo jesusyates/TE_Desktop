@@ -7,8 +7,6 @@ interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
   /** 兼容旧名；未设 `VITE_API_BASE_URL` 时仍可读取 */
   readonly VITE_SHARED_CORE_BASE_URL?: string;
-  /** D-7-5A：AI 网关基址 */
-  readonly VITE_AI_GATEWAY_BASE_URL?: string;
   readonly VITE_AICS_BACKEND_PROFILE?: string;
 }
 

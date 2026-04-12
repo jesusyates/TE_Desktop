@@ -48,6 +48,10 @@ function getUsageStore() {
   return getDomainStores().usage;
 }
 
+function getAuditStore() {
+  return getDomainStores().audit;
+}
+
 function getSettingsStore() {
   return getDomainStores().settings;
 }
@@ -67,6 +71,7 @@ module.exports = {
   getResultStore,
   getHistoryStore,
   getUsageStore,
+  getAuditStore,
   getSettingsStore,
   getFeatureFlagStore
 };

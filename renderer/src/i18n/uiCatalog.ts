@@ -370,7 +370,7 @@ export const zhCN = {
     inputPlaceholder: "输入一个任务，例如：写一篇产品介绍",
     sendMessageAria: "发送",
     /** D-7-6G：执行进行中再次提交时的轻提示 */
-    busySubmitNotice: "当前有任务正在执行，请等待完成后再发送",
+    busySubmitNotice: "当前任务正在执行，请稍候",
     /** E-3：Core GET /templates/:id 失败 */
     templateLoadFailed: "模板加载失败，请检查网络后重试。",
     templateLoadInvalidContent: "模板内容无效（缺少可执行的 sourcePrompt）。",
@@ -396,7 +396,7 @@ export const zhCN = {
       errorNetworkHint: "网络异常，请检查网络后重试。",
       errorTimeoutHint: "执行时间过长，已超时。"
     },
-    memoryUsedThisRound: "本轮已使用 Memory（hints）影响分析与规划。",
+    memoryUsedThisRound: "本轮已使用 Memory（hints）参与本地分析与规划。",
     memoryViewInPage: "查看记忆条目",
     memoryRoundDetailLabel: "提示明细（本轮）",
     templateChipLabel: "当前使用模板",
@@ -405,27 +405,29 @@ export const zhCN = {
     templateChipClearTitle: "清除模板来源（正文保留）",
     /** E-3+：自模板链路成功后的「结果→模板」闭环提示 */
     templateClosureSaveHint: "本轮携带模板上下文执行。可将此结果保存为新模板，沉淀到你的「我的模板」以便再次复用。",
-    dataSafetyAttachmentsOmitted: "已按数据安全设置省略附件元数据：本轮不会随 /analyze、/plan 发送至 Core（本地执行仍可使用已选文件）。",
+    dataSafetyAttachmentsOmitted:
+      "已按数据安全设置省略附件元数据：发往服务端的请求不再附带附件清单；工作台本地分析仍可使用已选文件。",
     dataPosture: {
       title: "数据与执行位置",
       planeLocal: "执行位置：本机能力链（Computer / 本地运行时）— 任务正文默认不经过云端模型。",
-      planeCloud: "执行位置：内容与编排链路 — 走 Shared Core / AI 网关（仍受信任门闩与安全策略约束）。",
+      planeCloud:
+        "执行位置：内容与编排链路 — 经 Shared Core 的远端生成（仍受信任与安全策略约束）。",
       cloudAuto: "云端处理：已允许自动继续（设置：允许自动使用云端 AI）。涉及 L2 时仍可能按需提示。",
       cloudGated: "云端处理：受信任门闩约束；送往云端前可能需要你手动确认。",
       histWill: "服务端历史：终态摘要将写入账户任务历史（须登录）。",
       histSkip: "服务端历史：已关闭写入（设置）；本轮不会调用 execution_history 落库。",
       histNoAuth: "服务端历史：未登录 — 无法写入账户历史。",
       memWill: "记忆沉淀：已允许任务结束后的记忆回放与 Core 结果同步（设置）。",
-      memSkip: "记忆沉淀：已关闭（设置）— 跳过 recordTaskExecution、canonical flush 与 /result 同步。",
-      attachMeta: "附件：名称 / 大小 / MIME 元数据可随 Core 请求发送（文件本体不上传）。",
-      attachOmit: "附件：已关闭随请求发送元数据（设置）— /analyze、/plan 不附带附件清单。"
+      memSkip: "记忆沉淀：已关闭（设置）— 跳过 recordTaskExecution、canonical flush 与 Shared Core 记忆写入。",
+      attachMeta: "附件：名称 / 大小 / MIME 可随发往 Shared Core 的请求发送（文件本体不上传）。",
+      attachOmit: "附件：已关闭随网络请求发送元数据（设置）；本地分析不依赖此前缀。"
     },
     /** D-7-6I：占位/模拟成功态（不展示「已完成」） */
     mockResultNotice: "尚未接入AI能力",
     trustL2Message: "该任务需要使用云端处理数据，是否继续？",
     trustL2Continue: "继续",
     trustL2Cancel: "取消",
-    trustL1MemoryHint: "本轮携带记忆摘要参与云端分析与规划。",
+    trustL1MemoryHint: "本轮携带记忆摘要参与本地分析与规划；远端 AI 生成仍受信任与安全策略约束。",
     trustBlocked: "当前任务被安全策略阻断，无法继续。",
     clarificationTitle: "请先确认任务方向",
     clarificationConfirm: "确认并继续",
@@ -827,7 +829,7 @@ export const zhCN = {
   templates: {
     title: "模板",
     lead: "模板是跨任务的正式复用层：从列表或快捷入口启动工作台，或在历史沉淀为新模板。",
-    leadCore: "列表来自 GET /templates/list；启动任务使用 ?templateId=（填入输入区，不自动执行）；结构与元数据与服务端一致。",
+    leadCore: "列表来自 Shared Core GET /v1/templates；启动任务使用 ?templateId=（填入输入区，不自动执行）。",
     listTabsExplain: "系统模板 · 我的模板 · 收藏 · 最近使用 — 四类分区；最近使用按本机打开顺序。",
     card: "说明",
     empty: "暂无模板。",
@@ -835,7 +837,7 @@ export const zhCN = {
     tabLibrary: "系统模板",
     tabFavorites: "收藏",
     tabRecent: "最近使用",
-    emptyMine: "暂无服务端同步的我的模板（E-2 将支持保存入库）；本地已存模板仍可在工作台使用。",
+    emptyMine: "暂无服务端同步的我的模板；保存成功后将出现在此处。本地已存模板仍可在工作台使用。",
     emptyLibrary: "暂无官方模板。",
     emptyFavorites: "暂无收藏。收藏写入将在后续版本提供。",
     emptyRecent: "尚未从本页打开过模板；点击卡片进入工作台后会记录最近使用。",
@@ -870,6 +872,8 @@ export const zhCN = {
     btnDeleteTemplate: "删除",
     deleteTemplateConfirm: "确定从服务端删除此用户模板？不可恢复。",
     deleteTemplateFail: "删除失败",
+    deleteTemplateUnavailable:
+      "当前 Shared Core 未提供正式的模板删除接口，无法在客户端完成服务端删除。",
     detailPageTitle: "模板详情",
     detailBackList: "返回模板列表",
     detailHowTitle: "会如何影响任务执行",
@@ -1129,7 +1133,6 @@ export const zhCN = {
     diagHotState: "工作台热状态",
     diagLastExport: "最近导出路径",
     diagSharedCoreReach: "Shared Core（账户 / 任务 API）",
-    diagAiGatewayReach: "AI 网关（analyze / plan / task 等）",
     diagReachChecking: "检测中…",
     diagReachOk: "可达",
     diagReachNo: "不可达",
@@ -1217,7 +1220,7 @@ export const zhCN = {
       "关闭后输入栏旁模板芯片仍显示名称与清除按钮，但隐藏跳转详情（执行仍携带 templateId，来源始终可见）。",
     h1TrustResultProvenance: "结果来源",
     h1TrustResultProvenanceBody:
-      "生成内容经过后端 AI 网关与统一安全链；结果区展示的「结果来源」反映本轮输出的可信度标记。",
+      "生成内容经过 Shared Core 与统一安全链；结果区展示的「结果来源」反映本轮输出的可信度标记。",
     h1TrustMemoryTemplate: "记忆与模板对执行的影响",
     h1TrustMemoryTemplateBody:
       "Memory hints 可能影响默认模式、风格与规划；从模板启动会携带模板元数据。具体受上方开关与服务端策略限制。",
@@ -1230,13 +1233,13 @@ export const zhCN = {
       "以下开关仅作用于本机客户端发起的写入与请求形态；不绕过后端强制安全策略，也不替代内容安全审计。与「记忆与模板偏好」「云端 AI」同属信任与数据处理分层。",
     h1DataSafetyHistory: "允许写入服务端任务历史",
     h1DataSafetyHistoryHelp:
-      "关闭后，终态不会调用 execution_history 接口；工作台仍可正常执行。关闭时同时省略 AI 网关 `/task` 旁路记录。",
+      "关闭后，终态不会调用 execution_history 接口；工作台仍可正常执行。",
     h1DataSafetyMemoryWrite: "允许任务结束后的记忆与结果同步",
     h1DataSafetyMemoryWriteHelp:
-      "关闭后，跳过本机记忆回放写入、Core canonical flush 与 /result 同步；不会改变「分析时是否读取 Memory hints」（见记忆与模板偏好）。",
-    h1DataSafetyAttachments: "向 Core 请求附带附件元数据",
+      "关闭后，跳过本机记忆回放写入、canonical flush 与 Shared Core 记忆条目写入；不会改变「分析时是否读取 Memory hints」（见记忆与模板偏好）。",
+    h1DataSafetyAttachments: "向服务端请求附带附件元数据",
     h1DataSafetyAttachmentsHelp:
-      "关闭后，/analyze、/plan 与工作台会话启动均不附带附件名称、大小、MIME；文件仍仅在本地用于可选能力。提交时会提示一回。",
+      "关闭后，发往服务端的请求与工作台会话启动均不附带附件名称、大小、MIME；本地分析仍可使用本地文件。提交时会提示一回。",
     h1LocalRuntimeCard: "本地执行",
     h1LocalRuntimeBody:
       "目录扫描、文本读取与文本规则处理属于本地执行：未上传云端，仅在本机处理。任务历史列表与工作台结果冻结区对本地执行默认只保留摘要，不长久保存全文。",
@@ -1254,7 +1257,8 @@ export const zhCN = {
     title: "长期记忆",
     lead:
       "以下内容来自服务端为您保存的执行记忆（正式接口同步）。工作台在分析任务时会按规则读取其中少量摘要，用于默认模式、内容风格与轻量提示；不会把完整历史原文塞进单次任务。",
-    readOnlyBadge: "可在此查看、删除记忆，并可本机标记重要/忽略（忽略仅影响本页展示）。",
+    readOnlyBadge:
+      "可在此查看服务端记忆（Shared Core 列表接口），并可本机标记重要/忽略（忽略仅影响本页展示）。服务端删除能力当前未开放。",
     workbenchHint:
       "启用中的条目可能在后续任务中作为轻量 hints 参与分析与规划（有上限；与设置中的「应用 Memory hints」联动）。",
     h2HowTitle: "记忆会如何影响任务",
@@ -1275,6 +1279,8 @@ export const zhCN = {
     btnDelete: "删除",
     deleteConfirm: "确定从服务端删除这条记忆？删除后无法恢复。",
     deleteFail: "删除失败",
+    deleteUnavailable:
+      "当前 Shared Core 未提供正式的记忆删除接口，无法在客户端完成服务端删除。你可使用本页的「忽略」仅隐藏展示。",
     btnPin: "标为重要",
     btnUnpin: "取消重要",
     btnIgnore: "本机忽略",
@@ -1805,7 +1811,7 @@ export const enUS: UiCatalog = {
       errorNetworkHint: "Network issue — check your connection and retry.",
       errorTimeoutHint: "The run timed out."
     },
-    memoryUsedThisRound: "This run used Memory (hints) in analysis and planning.",
+    memoryUsedThisRound: "This run used Memory (hints) in local analysis and planning.",
     memoryViewInPage: "View memory entries",
     memoryRoundDetailLabel: "Applied hints (this run)",
     templateChipLabel: "Active template",
@@ -1815,13 +1821,13 @@ export const enUS: UiCatalog = {
     templateClosureSaveHint:
       "This run started from a template context. You can save this result as a new template under My templates for reuse.",
     dataSafetyAttachmentsOmitted:
-      "Per your data-safety settings, attachment metadata was omitted: /analyze and /plan will not receive file names or sizes (you can still use local files where supported).",
+      "Per your data-safety settings, attachment metadata was omitted: outbound server requests will not include file names or sizes; local workbench analysis can still use selected files.",
     dataPosture: {
       title: "Data & execution plane",
       planeLocal:
         "Execution plane: local / Computer runtime — prompt text is not routed through cloud models by default on this path.",
       planeCloud:
-        "Execution plane: content & orchestration — goes through Shared Core / AI gateway (still gated by trust and safety).",
+        "Execution plane: content & orchestration — remote generation via Shared Core (still gated by trust and safety).",
       cloudAuto:
         "Cloud processing: auto-continue is allowed (Settings: Allow automatic cloud AI). L2-style prompts may still appear when required.",
       cloudGated:
@@ -1833,17 +1839,18 @@ export const enUS: UiCatalog = {
       memWill:
         "Memory reflection: post-run memory record and Core result sync are allowed (Settings).",
       memSkip:
-        "Memory reflection: off (Settings) — skips recordTaskExecution, canonical flush, and /result sync.",
+        "Memory reflection: off (Settings) — skips recordTaskExecution, canonical flush, and Shared Core memory writes.",
       attachMeta:
-        "Attachments: names / sizes / MIME may be sent with Core requests (files themselves are not uploaded).",
+        "Attachments: names / sizes / MIME may be sent with Shared Core requests; files themselves are not uploaded.",
       attachOmit:
-        "Attachments: metadata is not sent with requests (Settings) — /analyze and /plan carry no attachment list."
+        "Attachments: metadata is not sent with network requests (Settings); local analysis does not depend on this toggle."
     },
     mockResultNotice: "AI capability not connected yet.",
     trustL2Message: "This task needs cloud processing. Continue?",
     trustL2Continue: "Continue",
     trustL2Cancel: "Cancel",
-    trustL1MemoryHint: "This run sends memory summaries to the cloud for analysis and planning.",
+    trustL1MemoryHint:
+      "This run applies memory summaries in local analysis and planning; remote AI generation remains trust-gated.",
     trustBlocked: "This task was blocked and cannot continue.",
     clarificationTitle: "Confirm task direction",
     clarificationConfirm: "Confirm and continue",
@@ -2248,7 +2255,7 @@ export const enUS: UiCatalog = {
   templates: {
     title: "Templates",
     lead: "Templates are first-class reuse: launch the workbench from the list or quick access, or promote a history row into a template.",
-    leadCore: "List: GET /templates/list. Launch: ?templateId= (fills composer, does not auto-run). Metadata matches the server model.",
+    leadCore: "List: Shared Core GET /v1/templates. Launch: ?templateId= (fills composer, does not auto-run).",
     listTabsExplain:
       "System · Mine · Favorites · Recent — four tabs; Recent is ordered by last opened on this device.",
     card: "About",
@@ -2257,7 +2264,7 @@ export const enUS: UiCatalog = {
     tabLibrary: "System templates",
     tabFavorites: "Favorites",
     tabRecent: "Recent",
-    emptyMine: "No user templates on the server yet (E-2 will persist saves); locally saved ones still work in the workbench.",
+    emptyMine: "No user templates on the server yet; after a successful save they appear here. Local-only templates still work in the workbench.",
     emptyLibrary: "No official templates available.",
     emptyFavorites: "No favorites yet. Favorite toggles will ship in a later release.",
     emptyRecent: "Open a template from this page to build recent-usage history.",
@@ -2292,6 +2299,8 @@ export const enUS: UiCatalog = {
     btnDeleteTemplate: "Delete",
     deleteTemplateConfirm: "Delete this user template on the server? This cannot be undone.",
     deleteTemplateFail: "Could not delete",
+    deleteTemplateUnavailable:
+      "Shared Core does not expose an official template-delete API yet, so the client cannot remove templates on the server.",
     detailPageTitle: "Template detail",
     detailBackList: "Back to templates",
     detailHowTitle: "How this affects execution",
@@ -2557,7 +2566,6 @@ export const enUS: UiCatalog = {
     diagHotState: "Workbench hot state",
     diagLastExport: "Last export path",
     diagSharedCoreReach: "Shared Core (account / task API)",
-    diagAiGatewayReach: "AI gateway (analyze / plan / task, etc.)",
     diagReachChecking: "Checking…",
     diagReachOk: "Reachable",
     diagReachNo: "Unreachable",
@@ -2653,7 +2661,7 @@ export const enUS: UiCatalog = {
       "When off, the chip still shows the name and clear control, but hides the detail link (runs still carry templateId).",
     h1TrustResultProvenance: "Result provenance",
     h1TrustResultProvenanceBody:
-      "Outputs go through the backend AI gateway and safety chain; the result panel explains trust marks for this run.",
+      "Outputs go through Shared Core and the safety chain; the result panel explains trust marks for this run.",
     h1TrustMemoryTemplate: "How memory & templates affect runs",
     h1TrustMemoryTemplateBody:
       "Hints can steer default mode, style, and planning; templates carry metadata when launched—subject to toggles and server policy.",
@@ -2666,13 +2674,13 @@ export const enUS: UiCatalog = {
       "These toggles change what this client sends and persists. They do not override mandatory server-side safety, and they sit alongside Cloud AI and Memory preferences.",
     h1DataSafetyHistory: "Allow server task history writes",
     h1DataSafetyHistoryHelp:
-      "When off, terminal states skip execution_history; runs still work. Also skips best-effort AI gateway /task logging.",
+      "When off, terminal states skip execution_history; runs still work.",
     h1DataSafetyMemoryWrite: "Allow post-run memory & result sync",
     h1DataSafetyMemoryWriteHelp:
-      "When off, skips local memory recording, Core canonical flush, and /result sync. “Apply Memory hints” still controls read-time hints separately.",
-    h1DataSafetyAttachments: "Send attachment metadata to Core",
+      "When off, skips local memory recording, canonical flush, and Shared Core memory writes. “Apply Memory hints” still controls read-time hints separately.",
+    h1DataSafetyAttachments: "Send attachment metadata with server requests",
     h1DataSafetyAttachmentsHelp:
-      "When off, /analyze, /plan, and session start omit attachment name/size/MIME metadata; files remain local. You get a one-time toast when submitting.",
+      "When off, outbound server requests and session start omit attachment name/size/MIME; local analysis can still use local files. You get a one-time toast when submitting.",
     h1LocalRuntimeCard: "Local execution",
     h1LocalRuntimeBody:
       "Folder scan, text read, and on-device text rules are local execution: not uploaded to the cloud; processed on this device only. Task history and frozen workbench rows default to summaries—not full text from local steps.",
@@ -2690,7 +2698,8 @@ export const enUS: UiCatalog = {
     title: "Long-term memory",
     lead:
       "Entries below are stored for your account on the server (official list/detail APIs). The workbench may read small summaries when analyzing tasks—for default mode, style, and light hints. Full history is never pasted wholesale into a single run.",
-    readOnlyBadge: "View and delete server-side memory; pin or hide entries locally (hide affects this page only).",
+    readOnlyBadge:
+      "View server-side memory (Shared Core list API); pin or hide entries locally (hide affects this page only). Server-side delete is not available yet.",
     workbenchHint:
       "Active rows may be used as lightweight hints for analyze/plan (capped), tied to the “Apply Memory hints” toggle in Settings.",
     h2HowTitle: "How memory affects tasks",
@@ -2711,6 +2720,8 @@ export const enUS: UiCatalog = {
     btnDelete: "Delete",
     deleteConfirm: "Delete this memory on the server? This cannot be undone.",
     deleteFail: "Could not delete",
+    deleteUnavailable:
+      "Shared Core does not expose an official memory-delete API yet, so the client cannot remove rows on the server. Use Hide locally to suppress items on this page.",
     btnPin: "Pin",
     btnUnpin: "Unpin",
     btnIgnore: "Hide locally",

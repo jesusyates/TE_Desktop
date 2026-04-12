@@ -77,15 +77,28 @@ function getConfig() {
     authProvider,
 
     openaiApiKey: readEnv("OPENAI_API_KEY", ""),
+    /** DeepSeek（OpenAI 兼容 /v1/chat/completions） */
+    deepseekApiKey: readEnv("DEEPSEEK_API_KEY", ""),
+    /** 可选：自建/代理网关 Base URL，默认 https://api.deepseek.com */
+    deepseekApiBaseUrl: readEnv("DEEPSEEK_API_BASE_URL", "https://api.deepseek.com"),
+    deepseekModelDefault: readEnv("DEEPSEEK_MODEL_DEFAULT", "deepseek-chat"),
 
     /** AI Router 最小接入（模型名仅来自 env） */
-    aiProviderDefault: readEnv("AI_PROVIDER_DEFAULT", "openai"),
-    aiModelDefault: readEnv("AI_MODEL_DEFAULT", "gpt-4o-mini"),
+    aiProviderDefault: readEnv("AI_PROVIDER_DEFAULT", "deepseek"),
+    aiModelDefault: readEnv("AI_MODEL_DEFAULT", "gpt-4.1-mini"),
     aiTimeoutMs: readInt("AI_TIMEOUT_MS", 60_000),
     aiMaxPromptChars: readInt("AI_MAX_PROMPT_CHARS", 32_000),
 
     /** 新 entitlement 默认 token 上限（仅新建行；SQLite/memory insert同步） */
     quotaDefaultTokens: readInt("QUOTA_DEFAULT_TOKENS", 100_000),
+    /**
+     * 逗号分隔 userId：仅这些账号在 AI Router 门禁处获得额度/活跃态修补（生产小范围测试用，非全局放开）。
+     * 与云库错误模板行（quota 空/0、status 大小写等）配合；默认空。
+     */
+    aiGateUserIdAllowlist: readEnv("AI_GATE_USER_ID_ALLOWLIST", "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
     /** 估算成本：每 1K tokens 计价单位（0=不计费） */
     usageCostPer1kTokens: parseFloat(readEnv("USAGE_COST_PER_1K_TOKENS", "0")) || 0,
 

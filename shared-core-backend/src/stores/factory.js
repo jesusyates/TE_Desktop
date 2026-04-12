@@ -20,6 +20,7 @@ const { createHistoryStore } = require("./history/history.store");
 const { createMemoryAssetStore } = require("./memory/memory.store");
 const { createTemplateCanonicalStore } = require("./template/template.store");
 const { createUsageStore } = require("./usage/usage.store");
+const { createAuditStore } = require("./audit/audit.store");
 const { createSettingsStore } = require("./settings/settings.store");
 const { createFeatureFlagStore } = require("./featureFlag/featureFlag.store");
 
@@ -45,6 +46,7 @@ function createDomainStores(c = config()) {
   const memoryAsset = createMemoryAssetStore(mode, dir);
   const templateCanon = createTemplateCanonicalStore(mode, dir);
   const usage = createUsageStore(mode, dir);
+  const audit = createAuditStore(mode, dir);
   const settings = createSettingsStore(mode, dir);
   const featureFlag = createFeatureFlagStore(mode, dir);
 
@@ -55,13 +57,14 @@ function createDomainStores(c = config()) {
   const result = createResultStore(mode, resultsPath);
   const history = createHistoryStore(mode, historyPath);
 
-  /** @type {{ task: import('./task-store.base').TaskStore, memory: import('./memory-domain-store.base').MemoryDomainStore, memoryAsset: object, template: import('./template-store.base').TemplateStore, usage: object, taskRun: object, result: object, history: object }} */
+  /** @type {{ task: import('./task-store.base').TaskStore, memory: import('./memory-domain-store.base').MemoryDomainStore, memoryAsset: object, template: import('./template-store.base').TemplateStore, usage: object, audit: object, taskRun: object, result: object, history: object }} */
   const out = {
     task: taskMem,
     memory: memMem,
     memoryAsset,
     template: templateCanon,
     usage,
+    audit,
     settings,
     featureFlag,
     taskRun,
@@ -76,6 +79,7 @@ function createDomainStores(c = config()) {
       out.memoryAsset = createMemoryAssetStore("memory", dir);
       out.template = createTemplateCanonicalStore("memory", dir);
            out.usage = createUsageStore("memory", dir);
+      out.audit = createAuditStore("memory", dir);
       out.settings = createSettingsStore("memory", dir);
       out.featureFlag = createFeatureFlagStore("memory", dir);
       out.taskRun = createTaskRunStore("memory", taskRunPath);
@@ -88,6 +92,7 @@ function createDomainStores(c = config()) {
       out.memoryAsset = createMemoryAssetStore("local_only", dir);
       out.template = createTemplateCanonicalStore("local_only", dir);
       out.usage = createUsageStore("local_only", dir);
+      out.audit = createAuditStore("local_only", dir);
       out.settings = createSettingsStore("local_only", dir);
       out.featureFlag = createFeatureFlagStore("local_only", dir);
       out.taskRun = createTaskRunStore("local_only", taskRunPath);
@@ -101,6 +106,7 @@ function createDomainStores(c = config()) {
         out.memoryAsset = createMemoryAssetStore("cloud_primary", dir);
         out.template = createTemplateCanonicalStore("cloud_primary", dir);
         out.usage = createUsageStore("cloud_primary", dir);
+        out.audit = createAuditStore("cloud_primary", dir);
         out.settings = createSettingsStore("cloud_primary", dir);
         out.featureFlag = createFeatureFlagStore("cloud_primary", dir);
         out.taskRun = createTaskRunStore("cloud_primary", taskRunPath);
@@ -112,6 +118,7 @@ function createDomainStores(c = config()) {
         out.memoryAsset = createMemoryAssetStore("local_only", dir);
         out.template = createTemplateCanonicalStore("local_only", dir);
         out.usage = createUsageStore("local_only", dir);
+        out.audit = createAuditStore("local_only", dir);
         out.settings = createSettingsStore("local_only", dir);
         out.featureFlag = createFeatureFlagStore("local_only", dir);
         out.taskRun = createTaskRunStore("local_only", taskRunPath);
@@ -126,6 +133,7 @@ function createDomainStores(c = config()) {
         out.memoryAsset = createMemoryAssetStore("dual_write", dir);
         out.template = createTemplateCanonicalStore("dual_write", dir);
         out.usage = createUsageStore("dual_write", dir);
+        out.audit = createAuditStore("dual_write", dir);
         out.settings = createSettingsStore("dual_write", dir);
         out.featureFlag = createFeatureFlagStore("dual_write", dir);
         out.taskRun = createTaskRunStore("dual_write", taskRunPath);
@@ -137,6 +145,7 @@ function createDomainStores(c = config()) {
         out.memoryAsset = createMemoryAssetStore("local_only", dir);
         out.template = createTemplateCanonicalStore("local_only", dir);
         out.usage = createUsageStore("local_only", dir);
+        out.audit = createAuditStore("local_only", dir);
         out.settings = createSettingsStore("local_only", dir);
         out.featureFlag = createFeatureFlagStore("local_only", dir);
         out.taskRun = createTaskRunStore("local_only", taskRunPath);
@@ -150,6 +159,7 @@ function createDomainStores(c = config()) {
       out.memoryAsset = createMemoryAssetStore("local_only", dir);
       out.template = createTemplateCanonicalStore("local_only", dir);
       out.usage = createUsageStore("local_only", dir);
+      out.audit = createAuditStore("local_only", dir);
       out.settings = createSettingsStore("local_only", dir);
       out.featureFlag = createFeatureFlagStore("local_only", dir);
       out.taskRun = createTaskRunStore("local_only", taskRunPath);

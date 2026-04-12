@@ -1,7 +1,8 @@
 /**
- * D-7-3K：从 Core 读取 usage 列表（HTTP 封装，不带入 UI）。
+ * D-7-3K：从 Shared Core GET /v1/usage 读取 usage 列表（HTTP 封装，不带入 UI）。
  */
-import { aiGatewayClient } from "./apiClient";
+import { apiClient } from "./apiClient";
+import { normalizeV1ResponseBody } from "./v1Envelope";
 
 export type CoreUsageItem = {
   userId: string;
@@ -14,37 +15,65 @@ export type CoreUsageItem = {
   createdAt: string;
 };
 
-function parseItems(body: unknown): CoreUsageItem[] {
-  const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  if (obj.success !== true || !Array.isArray(obj.items)) return [];
+function parseV1UsageItems(inner: Record<string, unknown> | null, limit: number): CoreUsageItem[] {
+  const usageRaw = inner && Array.isArray(inner.usage) ? inner.usage : [];
   const out: CoreUsageItem[] = [];
-  for (const it of obj.items) {
+  for (const it of usageRaw) {
     if (!it || typeof it !== "object") continue;
     const r = it as Record<string, unknown>;
     out.push({
       userId: typeof r.userId === "string" ? r.userId : "",
-      clientId: typeof r.clientId === "string" ? r.clientId : "",
+      clientId: typeof r.provider === "string" ? r.provider : "",
       runId: typeof r.runId === "string" ? r.runId : "",
-      prompt: typeof r.prompt === "string" ? r.prompt : "",
-      mode: typeof r.mode === "string" ? r.mode : "unknown",
-      ...(typeof r.stepCount === "number" && Number.isFinite(r.stepCount) ? { stepCount: r.stepCount } : {}),
-      success: typeof r.success === "boolean" ? r.success : true,
+      prompt: "",
+      mode: typeof r.product === "string" ? r.product : "usage",
+      ...(typeof r.totalTokens === "number" && Number.isFinite(r.totalTokens) ? { stepCount: r.totalTokens } : {}),
+      success: true,
       createdAt: typeof r.createdAt === "string" ? r.createdAt : ""
     });
+    if (out.length >= limit) break;
   }
   return out;
 }
 
-/** GET /usage?limit= — 按请求头 userId 过滤，由服务端完成 */
-export async function listCoreUsage(limit = 50): Promise<CoreUsageItem[]> {
-  const lim = Math.min(100, Math.max(1, limit));
-  const { data, status } = await aiGatewayClient.get<unknown>(`/usage?limit=${lim}`, {
-    validateStatus: () => true
-  });
+export type CoreQuotaSummary = {
+  plan: string;
+  quotaLimit: number;
+  quotaUsed: number;
+  quotaRemaining: number;
+};
+
+/** GET /v1/quota — 与账户 entitlement 同源摘要，供独立诊断或未来 UI使用 */
+export async function fetchCoreQuota(): Promise<CoreQuotaSummary> {
+  const { data: raw, status } = await apiClient.get<unknown>("/v1/quota", { validateStatus: () => true });
   if (status < 200 || status >= 300) {
-    const o = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+    const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     const msg = typeof o.message === "string" ? o.message : `HTTP ${status}`;
     throw new Error(msg || "请求失败");
   }
-  return parseItems(data);
+  const d = normalizeV1ResponseBody(raw) as Record<string, unknown> | null;
+  if (!d || typeof d !== "object") {
+    throw new Error("invalid_quota_response");
+  }
+  return {
+    plan: typeof d.plan === "string" ? d.plan : "",
+    quotaLimit: Number(d.quotaLimit) || 0,
+    quotaUsed: Number(d.quotaUsed) || 0,
+    quotaRemaining: Number(d.quotaRemaining) || 0
+  };
+}
+
+/** GET /v1/usage — 按会话用户过滤，由服务端完成 */
+export async function listCoreUsage(limit = 50): Promise<CoreUsageItem[]> {
+  const lim = Math.min(100, Math.max(1, limit));
+  const { data: raw, status } = await apiClient.get<unknown>("/v1/usage", {
+    validateStatus: () => true
+  });
+  if (status < 200 || status >= 300) {
+    const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    const msg = typeof o.message === "string" ? o.message : `HTTP ${status}`;
+    throw new Error(msg || "请求失败");
+  }
+  const inner = normalizeV1ResponseBody(raw) as Record<string, unknown> | null;
+  return parseV1UsageItems(inner && typeof inner === "object" ? inner : null, lim);
 }

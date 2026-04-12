@@ -1,6 +1,6 @@
 /**
- * D-4：Workbench 主链消费的 Core Memory 轻量 hints（仅 GET /memory/list + 按需 GET /memory/:id）。
- * 不得使用 /memory-records 或 snapshot items 作为主消费源。
+ * D-4 / P1：Workbench 轻量 hints — `GET /v1/memory` 列表 + 列表派生详情（无独立 GET :id）。
+ * 不得使用历史 `/memory-records` 作为主消费源。
  */
 import { fetchMemoryById, fetchMemoryList, type MemoryListItemVm } from "../../services/coreMemoryService";
 import type { StyleOutputLength, StylePreferencesSnapshot } from "../../types/stylePreferences";
@@ -19,7 +19,7 @@ const MAX_LINE = 100;
 const MAX_HINT_LINES = 3;
 const STYLE_SUMMARY_MAX = 80;
 
-/** 发往 Core /analyze、/plan 的轻量契约（与 aics-core sanitize 对齐） */
+/** 并入 Workbench **本地** analyze/plan 上下文的轻量 Memory契约（字段命名与历史 aics-core sanitize 兼容） */
 export type CoreMemoryHintsWire = {
   preferredMode?: "content" | "computer";
   hintLines?: string[];

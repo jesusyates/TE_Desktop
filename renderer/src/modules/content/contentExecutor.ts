@@ -103,7 +103,7 @@ function summarizeFromComputerEvents(
 }
 
 /**
- * G-1：基于前序 content — 经统一 `/ai/content` Router（失败抛错 → 执行步 error，无假完成）。
+ * G-1：基于前序 content — 经 Shared Core `POST /v1/ai/execute`（失败抛错 → 执行步 error，无假完成）。
  */
 async function summarizeFromPriorContentResults(
   previousResults: TaskResult[] | undefined,

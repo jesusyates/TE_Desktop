@@ -17,6 +17,6 @@ export type TaskHistoryListEntry = {
   preview?: string;
   createdAt: string;
   updatedAt: string;
-  /** source === "core" 时用于 GET /results/:runId */
+  /** source === "core" 时用于 GET /v1/results/:runId */
   coreRunId?: string;
 };

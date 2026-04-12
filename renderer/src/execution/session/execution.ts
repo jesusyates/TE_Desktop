@@ -66,9 +66,30 @@ export function isExecutionTerminal(status: ExecutionStatus): boolean {
 }
 
 /**
+ * 任务快照轮询：仅在进行态且存在 taskId 时继续请求 GET /v1/tasks/:id。
+ * runId 预留与 run 级轮询对齐；当前快照轮询仅依赖 task.status。
+ */
+export function shouldPollTaskStatus(
+  executionStatus: ExecutionStatus,
+  taskId: string,
+  _runId?: string | null
+): boolean {
+  if (!String(taskId ?? "").trim()) return false;
+  return !isExecutionTerminal(executionStatus);
+}
+
+/**
  * D-7-5P：进行态（validating / queued / running / paused / stopping）。
  * success / error / stopped / idle 均为非进行态：可展示终态，但不得锁死下一次发送。
  */
 export function isExecutionInProgress(status: ExecutionStatus): boolean {
   return status !== "idle" && !isExecutionTerminal(status);
+}
+
+/**
+ * D-7-6L：工作台「发送」是否应被「仍在执行」拦截（与 {@link isExecutionInProgress} 同源，仅用 **最终派生 status**）。
+ * 不得混用 currentTaskId / rawStatus；终态 success / error / stopped 必为 false。
+ */
+export function isExecutionBlockingSubmit(executionStatus: ExecutionStatus): boolean {
+  return isExecutionInProgress(executionStatus);
 }

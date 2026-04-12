@@ -4,7 +4,13 @@ import { toUserFacingErrorMessage } from "../services/userFacingErrorMessage";
 import { executionEngine } from "../execution/execution.engine";
 import { useExecutionState } from "../execution/execution.state";
 import { executionApi } from "../services/execution.api";
-import { createTask, mapCreateTaskResponseToExecutionTask } from "../services/tasks.api";
+import {
+  buildTaskApiPrompt,
+  createTask,
+  mapCreateTaskResponseToExecutionTask,
+  runTask
+} from "../services/tasks.api";
+import { mapServerExecutionResultToTaskResult } from "../services/serverExecutionResultMap";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
@@ -90,7 +96,27 @@ export const NewTaskPage = () => {
             setError("");
             createTask(inputData)
               .then(async (res) => {
+                const run = await runTask(res.id);
                 const task = mapCreateTaskResponseToExecutionTask(inputData, res);
+                const apiPrompt = buildTaskApiPrompt(inputData.oneLinePrompt, inputData.importedMaterials);
+                const tr = mapServerExecutionResultToTaskResult(
+                  apiPrompt,
+                  run.result,
+                  String(run.resultSourceType || "mock"),
+                  run.templateSuggestion
+                );
+                if (tr?.kind === "content") {
+                  task.status = String(run.status || "").toLowerCase() === "success" ? "success" : "failed";
+                  task.result = {
+                    title: tr.title,
+                    hook: "",
+                    contentStructure: "",
+                    body: tr.body,
+                    copywriting: "",
+                    tags: [],
+                    publishSuggestion: ""
+                  };
+                }
                 setCurrentTask(task);
                 try {
                   const detail = await executionApi.fetchExecutionTaskDetail(task.id);

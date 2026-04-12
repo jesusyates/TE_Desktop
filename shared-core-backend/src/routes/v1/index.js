@@ -22,6 +22,7 @@ const quotaService = require("../../modules/quota/quota.service");
 const aiRoutes = require("./ai.routes");
 const settingsService = require("../../modules/settings/settings.service");
 const featureFlagService = require("../../modules/featureFlag/featureFlag.service");
+const auditService = require("../../services/v1/audit.service");
 
 const router = express.Router();
 router.use(rateLimitV1Stub);
@@ -230,6 +231,29 @@ router.post(
   asyncRoute(async (req, res) => {
     const row = await memoryService.appendMemoryEntry(req.context, req.body || {});
     return sendV1Success(res, req, { item: row }, 201, null);
+  })
+);
+
+router.post(
+  "/audit-events",
+  asyncRoute(async (req, res) => {
+    const item = await auditService.appendAuditEvent(req.context, req.body || {});
+    return sendV1Success(res, req, { item }, 201, null);
+  })
+);
+
+router.get(
+  "/audit-events",
+  asyncRoute(async (req, res) => {
+    const items = await auditService.listAuditEventsForApi(req.context, req.query || {});
+    const limitRaw = req.query && req.query.limit != null ? Number(req.query.limit) : 50;
+    const limit = Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50));
+    return sendV1Success(res, req, { items }, 200, {
+      page: 1,
+      pageSize: limit,
+      total: items.length,
+      totalPages: items.length === 0 ? 0 : 1
+    });
   })
 );
 

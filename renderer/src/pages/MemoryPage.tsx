@@ -3,7 +3,6 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useUiStrings } from "../i18n/useUiStrings";
 import { Button } from "../components/ui/Button";
 import {
-  deleteMemoryById,
   fetchMemoryById,
   fetchMemoryList,
   type MemoryDetailVm,
@@ -89,7 +88,6 @@ export const MemoryPage = () => {
   const [marksTick, setMarksTick] = useState(0);
   const [showIgnored, setShowIgnored] = useState(false);
   const [onlyPinned, setOnlyPinned] = useState(false);
-  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
 
   useEffect(() => subscribeAppPreferences(() => setPrefsTick((n) => n + 1)), []);
 
@@ -209,18 +207,8 @@ export const MemoryPage = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, [detailId, closeDetail]);
 
-  const runDelete = async (id: string) => {
-    if (!window.confirm(mp.deleteConfirm)) return;
-    setDeleteBusyId(id);
-    try {
-      await deleteMemoryById(id);
-      if (detailId === id) closeDetail();
-      await loadList();
-    } catch (e) {
-      window.alert(`${mp.deleteFail}: ${e instanceof Error ? e.message : ""}`);
-    } finally {
-      setDeleteBusyId(null);
-    }
+  const runDelete = () => {
+    window.alert(mp.deleteUnavailable);
   };
 
   return (
@@ -374,13 +362,8 @@ export const MemoryPage = () => {
                         >
                           {mark.hidden ? mp.btnUnignore : mp.btnIgnore}
                         </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={deleteBusyId === row.id}
-                          onClick={() => void runDelete(row.id)}
-                        >
-                          {deleteBusyId === row.id ? "…" : mp.btnDelete}
+                        <Button type="button" variant="secondary" onClick={runDelete}>
+                          {mp.btnDelete}
                         </Button>
                       </div>
                     </td>
@@ -444,12 +427,7 @@ export const MemoryPage = () => {
             ) : detail ? (
               <>
                 <div className="memory-page__modal-actions">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={deleteBusyId === detail.memoryId}
-                    onClick={() => void runDelete(detail.memoryId)}
-                  >
+                  <Button type="button" variant="secondary" onClick={runDelete}>
                     {mp.detailDelete}
                   </Button>
                 </div>

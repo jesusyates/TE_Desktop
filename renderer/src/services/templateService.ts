@@ -1,7 +1,7 @@
 /**
- * D-7-4C / E-1：模板读写的统一收口（系统内置 + 用户 localStorage）。
- * — **Templates 列表页**：以 `coreTemplateService.fetchTemplateList`（GET /templates/list）为正式来源。
- * — **工作台 bootstrap**：E-3 起主路径为 `coreTemplateService.fetchTemplateById`；本处 `getTemplateWorkbenchBootstrap` 仅保留兼容/应急，不得作为常规入口。
+ * D-7-4C / P2：模板读写的统一收口（系统内置 + 用户 localStorage）。
+ * — **Templates 列表页**：`coreTemplateService.fetchTemplateList`（GET /v1/templates + 内置系统条）。
+ * — **工作台 bootstrap**：主路径 `coreTemplateService.fetchTemplateById`（GET /v1/templates/:id或内置 sys-*）；`getTemplateWorkbenchBootstrap` 仅应急。
  */
 
 import type { TaskMode } from "../types/taskMode";
@@ -205,7 +205,7 @@ export function getTemplateWorkbenchBootstrap(templateId: string): TemplateWorkb
 }
 
 /**
- * E-2：先 POST /templates/save（正式入库），再以服务端 templateId 写入本地库供离线 bootstrap。
+ * E-2 / P2：先 POST /v1/templates（正式入库），再以服务端 id 写入本地库供离线 bootstrap。
  */
 export async function saveTemplateFromTask(input: SaveTemplateFromTaskInput): Promise<string> {
   const sessionMarket = await clientSession.getMarket();

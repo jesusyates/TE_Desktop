@@ -6,6 +6,7 @@ import type {
   ContentTaskResult,
   TaskResult
 } from "./resultTypes";
+import { sanitizeTaskResultForDisplay } from "./sanitizeResultContent";
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -153,19 +154,20 @@ export type ResultCardView = {
  * 卡片/列表展示用扁平字段（ExecutionResultPanel、模板详情等）。
  */
 export function toResultCardView(result: TaskResult): ResultCardView {
-  if (result.kind === "content") {
+  const s = sanitizeTaskResultForDisplay(result);
+  if (s.kind === "content") {
     return {
-      title: result.title,
-      body: result.body,
-      stepCount: result.stepCount ?? null,
-      durationLabel: result.durationMs != null ? `${result.durationMs} ms` : null
+      title: s.title,
+      body: s.body,
+      stepCount: s.stepCount ?? null,
+      durationLabel: s.durationMs != null ? `${s.durationMs} ms` : null
     };
   }
-  const body = result.body ?? result.summary ?? "";
+  const body = s.body ?? s.summary ?? "";
   return {
-    title: result.title,
+    title: s.title,
     body,
-    stepCount: result.stepCount ?? null,
+    stepCount: s.stepCount ?? null,
     durationLabel: null
   };
 }
@@ -175,10 +177,11 @@ export function toResultCardView(result: TaskResult): ResultCardView {
  */
 /** D-7-4G：Execution 详情缓存中的 TaskResult → legacy ResultPackage（历史回放/结果页） */
 export function taskResultToResultPackage(tr: TaskResult): ResultPackage {
-  const body = tr.body ?? tr.summary ?? "";
+  const s = sanitizeTaskResultForDisplay(tr);
+  const body = s.kind === "content" ? s.body : (s.body ?? s.summary ?? "");
   return {
-    title: tr.title?.trim() || "—",
-    hook: (tr.summary ?? "").trim(),
+    title: s.title?.trim() || "—",
+    hook: (s.summary ?? "").trim(),
     contentStructure: "",
     body,
     copywriting: "",
@@ -188,15 +191,15 @@ export function taskResultToResultPackage(tr: TaskResult): ResultPackage {
 }
 
 export function toTemplateResultSnapshot(result: TaskResult): TemplateResultSnapshot {
-  const previewSource = result.kind === "content" ? result.body : (result.body ?? result.summary ?? "");
+  const s = sanitizeTaskResultForDisplay(result);
+  const previewSource = s.kind === "content" ? s.body : (s.body ?? s.summary ?? "");
   const bodyPreview =
     previewSource.length > 800 ? `${previewSource.slice(0, 800)}…` : previewSource;
   return {
-    title: result.title,
+    title: s.title,
     bodyPreview,
-    stepCount: result.stepCount ?? 0,
-    durationLabel:
-      result.kind === "content" && result.durationMs != null ? `${result.durationMs} ms` : null
+    stepCount: s.stepCount ?? 0,
+    durationLabel: s.kind === "content" && s.durationMs != null ? `${s.durationMs} ms` : null
   };
 }
 

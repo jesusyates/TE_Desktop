@@ -1,0 +1,394 @@
+---
+description: AICS v1 总执行蓝图（统一入口 + 执行内核 + 极简体验）
+alwaysApply: true
+---
+
+# AICS v1 总执行蓝图（统一入口 + 执行内核 + 极简体验）
+
+---
+
+# 总目标（唯一方向）
+
+构建一个像 ChatGPT 一样的统一入口：
+
+- 用户只做一件事：输入需求
+- 系统完成所有复杂处理
+- 用户只看到：理解 → 确认 → 执行 → 结果
+
+---
+
+# 核心架构原则（必须遵守）
+
+## 1. 多入口允许，执行内核必须唯一
+
+- 首页
+- 模板
+- 文件
+- 本地操作（未来）
+
+最终全部进入同一执行链。
+
+## 2. 系统吃掉复杂性
+
+系统内部可以有：
+
+- 多模型
+- 多智能体
+- memory
+- template
+- routing
+- quota
+- fallback
+- execution plan
+
+但这些**绝不默认展示给用户**。
+
+## 3. 用户体验唯一目标
+
+- 少看字
+- 少操作
+- 快出结果
+
+---
+
+# 总执行阶段（锁死顺序）
+
+## Phase 1：首页统一入口（最高优先级）
+
+## Phase 2：统一前端状态机
+
+## Phase 3：结果展示收口
+
+## Phase 4：执行内核统一
+
+## Phase 5：多入口接入
+
+## Phase 6：记忆/模板接入
+
+## Phase 7：本地执行接入
+
+## Phase 8：全链路验收
+
+---
+
+# Phase 1：首页统一入口（立即执行）
+
+## 核心流程
+
+```text
+用户输入
+→ Analyze（本地）
+→ 分支：
+   - 不可执行 → 聊天说明
+   - 需补充 → 追问
+   - 可执行 → 确认
+→ 用户点击执行
+→ 执行中（极简）
+→ 返回结果
+```
+
+## Analyze 输出结构
+
+```ts
+type AnalyzeResult = {
+  canExecute: boolean;
+  needsClarification?: boolean;
+  questions?: string[];
+  reason?: string;
+  planSummary?: string;
+  riskLevel?: "L1" | "L2" | "L3" | "L4";
+};
+```
+
+## UI 规则
+
+### 可执行
+
+```text
+我可以帮你完成这个任务：
+
+{planSummary}
+
+是否开始执行？
+[开始执行]
+```
+
+### 不可执行
+
+```text
+这个任务目前无法执行：
+
+{reason}
+
+你可以这样做：
+- xxx
+- xxx
+```
+
+### 需要补充
+
+```text
+我还需要一些信息：
+
+- 问题1
+- 问题2
+```
+
+## 执行态 UI
+
+### 短任务
+
+不显示任何 loading。
+
+### 长任务
+
+```text
+正在处理...
+```
+
+## 禁止展示
+
+- ControllerPlanTimeline
+- SourceStrip
+- steps
+- strategist / planner / critic
+- 输入来源
+- 执行计划细节
+
+---
+
+# Phase 2：统一状态机
+
+```ts
+type EntryStage =
+  | "idle"
+  | "analyzing"
+  | "needs_clarification"
+  | "ready_to_execute"
+  | "executing"
+  | "done"
+  | "error";
+```
+
+## 输入规则
+
+```ts
+textarea.disabled = replayMode;
+```
+
+## 发送规则
+
+```ts
+canSend =
+  prompt.trim().length > 0 &&
+  !chatSubmitInFlight &&
+  !replayMode;
+```
+
+## 执行中点击发送
+
+```ts
+if (session.isBusy) {
+  toast("当前任务正在执行，请稍候");
+  return;
+}
+```
+
+---
+
+# Phase 3：结果展示收口
+
+## 成功
+
+只显示结果正文。
+
+## 失败
+
+```text
+执行失败，请稍后重试。
+```
+
+## fallback / mock
+
+```text
+本次结果为降级输出，仅供参考。
+```
+
+## 技术信息
+
+放入折叠区（默认关闭）。
+
+---
+
+# Phase 4：执行内核统一
+
+## 唯一执行链
+
+```text
+Analyze
+→ Decide
+→ Confirm
+→ Execute
+→ Result
+→ Memory
+```
+
+## 前端职责
+
+- 输入
+- 展示分析
+- 展示确认
+- 触发执行
+- 展示结果
+
+## 后端职责
+
+- tasks
+- runs
+- ai execute
+- result/history
+- memory/template
+- quota/usage
+- audit
+
+---
+
+# Phase 5：多入口接入
+
+## 规则
+
+所有入口最终调用：
+
+```text
+handleUserInput()
+→ 同一执行链
+```
+
+---
+
+# Phase 6：记忆 / 模板
+
+## 规则
+
+- 默认隐形
+- 自动参与执行
+- 不干扰用户
+
+---
+
+# Phase 7：本地执行
+
+## 示例
+
+用户：「帮我整理这个 Excel」
+
+系统：Analyze → Confirm → 执行本地操作。
+
+用户看到：和 AI 任务完全一样。
+
+---
+
+# Phase 8：验收标准
+
+必须全部满足：
+
+- 输入 → 分析 → 确认 → 执行 → 结果
+- UI 无内部结构
+- 输入框不锁死
+- 发送按钮不异常
+- mock/fallback 不污染结果
+- Shared Core 为唯一主链
+
+---
+
+# 补充铁规则（强制执行）
+
+## UI 层
+
+禁止展示：
+
+- controller
+- pipeline
+- model routing
+- memory 命中
+- quota 计算
+- fallback 技术细节
+- 英文报错
+- requestId
+
+## 行为层
+
+### 能自动处理的全部自动处理
+
+- 模型选择
+- memory 使用
+- template 使用
+- 重试
+- fallback
+- quota 判断
+- 语言识别
+
+### 能不问就不问
+
+只在以下情况询问：
+
+- 信息不足
+- 高风险
+- 会修改/发送/花钱
+
+### 能后台做就后台做
+
+- memory 写入
+- usage
+- audit
+- fallback
+- retry
+
+## 文案规则
+
+必须：
+
+- 短
+- 白话
+- 无技术词
+
+## 最终一句话
+
+**系统负责复杂，用户只拿结果。**
+
+---
+
+# 当前立即执行模块（给 Cursor）
+
+优先级：
+
+1. 首页统一入口（Phase 1）
+2. 状态机修正（Phase 2）
+3. 结果展示收口（Phase 3）
+
+---
+
+# 禁止行为
+
+- 不允许继续展示 pipeline / controller
+- 不允许多个执行链
+- 不允许 UI 暴露内部逻辑
+- 不允许用户理解系统结构
+
+---
+
+# 完成标志
+
+用户体验：
+
+```text
+输入一句话
+→ 系统理解
+→ 点一下确认（或直接执行）
+→ 等一下
+→ 出结果
+```
+
+---
+
+# END

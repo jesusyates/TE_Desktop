@@ -1,5 +1,5 @@
 /**
- * G-1A：/ai/content HTTP JSON 唯一解析入口（禁止 api/contentExecutor 各自猜字段）。
+ * G-1A：deprecated — 历史 `POST /ai/content` 响应的 JSON 解析入口（禁止各模块各自猜字段）；桌面端生成已走 `POST /v1/ai/execute`。
  */
 import type { ResultSource } from "../result/resultTypes";
 import type {
@@ -55,7 +55,7 @@ export function aiOutcomeFromFailureCode(code: string): AiContentWireOutcome {
 }
 
 /**
- * 解析网关返回的 JSON（200 + success:true 或 success:false）。
+ * 解析 HTTP JSON 响应（200 + success:true 或 success:false）。
  * — success:false → 结构化失败（由调用方抛错）
  * — success:true → 校验字段；非法则 wire_invalid（调用方抛错，不假装成功）
  */
@@ -71,7 +71,7 @@ function fail(
   };
 }
 
-export function parseAiContentGatewayJson(data: unknown): ParseAiContentWireResult {
+export function parseAiContentWireJson(data: unknown): ParseAiContentWireResult {
   const obj = data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
   if (!obj) {
     return fail("ai_content_wire_invalid", "响应不是 JSON 对象", "wire_invalid");

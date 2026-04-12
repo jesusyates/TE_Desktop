@@ -13,6 +13,7 @@ import {
   loadWorkbenchUiSnapshot,
   persistWorkbenchUiSnapshot,
   turnFrozenForDisplay,
+  type WorkbenchExecutionSourceV1,
   type WorkbenchTurnFrozen,
   type WorkbenchUiTurn
 } from "../../services/workbenchUiPersistence";
@@ -23,7 +24,6 @@ import type { TaskAnalysisResult } from "../../modules/workbench/analyzer/taskAn
 import type { TaskPlan } from "../../modules/workbench/planner/taskPlanTypes";
 import type { ExecutionPlan } from "../../modules/workbench/execution/executionPlanTypes";
 import { liftTaskPlanToExecutionPlan } from "../../modules/workbench/execution/executionPlanAdapters";
-import { getContentCapabilityBannerCopy } from "../../modules/workbench/execution/contentCapabilityRecognition";
 import type { SafetyCheckResult } from "../../modules/safety/safetyTypes";
 import type { PermissionCheckResult } from "../../modules/permissions/permissionTypes";
 import {
@@ -32,7 +32,6 @@ import {
   mergeControllerAlignment,
   permissionCheckOnCore,
   planTaskOnCore,
-  recordTaskPromptToAiGatewayBestEffort,
   safetyCheckOnCore
 } from "../../services/api";
 import {
@@ -41,7 +40,6 @@ import {
 } from "../../modules/permissions/permissionDefaults";
 import { analyzeTask } from "../../modules/workbench/analyzer/taskAnalyzer";
 import { planTask } from "../../modules/workbench/planner/taskPlanner";
-import { ExecutionPlanStepsPanel } from "../workbench/execution/ExecutionPlanStepsPanel";
 import { getMemoryHintsForTaskWithPrefs } from "../../modules/preferences/memoryHintsFromPrefs";
 import { loadMemorySnapshot } from "../../modules/memory/memoryStore";
 import { writeModePreferenceToCore } from "../../modules/memory/memoryWriteService";
@@ -59,11 +57,25 @@ import { TrustL2ConfirmModal } from "../../modules/trust/TrustGate";
 import { isLocalRuntimeIntent } from "../../modules/workbench/execution/localRuntimeIntent";
 import { bumpTemplateUseCount } from "../../services/templateUseStatsStorage";
 import type { ExecutionStatus } from "../../execution/session/execution";
-import { isExecutionTerminal } from "../../execution/session/execution";
+import {
+  isExecutionActionAllowed,
+  isExecutionBlockingSubmit,
+  isExecutionTerminal
+} from "../../execution/session/execution";
 import { useExecutionSession } from "../../execution/session/useExecutionSession";
 import type { TaskResult } from "../../modules/result/resultTypes";
 import { isLocalRuntimeSummaryOnlyForPersistence } from "../../modules/result/taskResultLocalRetention";
 import { isMockPlaceholderTaskResult } from "../../modules/result/mockResultUi";
+import { safetyBlockUserFacingMessage } from "../../modules/safety/safetyChecker";
+import { deriveWorkbenchExecutable } from "../../modules/workbench/workbenchExecutionGate";
+import type { AnalyzeResult } from "../../modules/entry/entryStage";
+import {
+  buildHighRiskConfirmMessage,
+  buildLightConfirmMessage,
+  isHighRiskConfirmTone,
+  runLocalEntryAnalyze,
+  shouldAutoExecute
+} from "../../modules/entry/entryController";
 import { QuickAccessPanel } from "../workbench/QuickAccessPanel";
 import { ContentIntelWorkbenchPanel } from "../workbench/ContentIntelWorkbenchPanel";
 import { SaveAsTemplateButton } from "../../modules/templates/components/SaveAsTemplateButton";
@@ -78,7 +90,7 @@ import { useUiStrings } from "../../i18n/useUiStrings";
 import { useWorkbenchExecutionStallHints } from "../../hooks/useWorkbenchExecutionStallHints";
 import { ChatInputBar, type AppliedTemplateSource } from "../workbench/chat/ChatInputBar";
 import { WorkbenchFrozenTurnBody } from "../workbench/chat/WorkbenchFrozenTurnBody";
-import { ControllerPlanTimeline } from "../workbench/chat/ControllerPlanTimeline";
+import { WorkbenchExecutionConfirmGate } from "../workbench/chat/WorkbenchExecutionConfirmGate";
 import { ExecutionTimelineArea } from "../workbench/chat/ExecutionTimelineArea";
 import {
   runControllerEngineV1,
@@ -95,8 +107,6 @@ import {
 } from "../../modules/workbench/workbenchSeoLiteClose";
 import { applyLightMemoryInfluence } from "../../modules/memory/lightMemoryEvolution";
 import { parseGoalIntentFromUserLine, persistNewActiveGoal } from "../../modules/workbench/activeGoalStore";
-import { formatIntentPreviewPrimaryLine, type PendingIntentPreviewStateV1 } from "../../modules/workbench/intentEnrichment";
-import { buildEnrichedIntentWithAI } from "../../modules/workbench/intentEnrichmentAI";
 import { ResultAssetStarButton } from "../../modules/workbench/ResultAssetStarButton";
 import {
   completionFingerprint,
@@ -129,11 +139,7 @@ import {
   type TemplateCoreContentNormalized
 } from "../../services/coreTemplateService";
 import { getTemplateMemoryContext, hasTemplateSavedForSource } from "../../services/templateService";
-import {
-  buildExecutionDataPostureRows,
-  formatClientDataSafetyTrace
-} from "../../modules/trust/executionDataPosture";
-import { DataPostureStrip } from "../workbench/chat/DataPostureStrip";
+import { formatClientDataSafetyTrace } from "../../modules/trust/executionDataPosture";
 import "./human-step-confirm.css";
 
 const REPLAY_EMPTY_LOGS: unknown[] = [];
@@ -191,6 +197,13 @@ const EMERGENCY_STOP_ACTIVE = new Set<ExecutionStatus>([
   "stopping"
 ]);
 
+/** 主工作台：默认不展示 Controller / 流水线步骤 / 数据姿态等内部执行细节 */
+const WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME = true;
+
+function emptyWorkbenchExecutionSource(): WorkbenchExecutionSourceV1 {
+  return { usedTemplate: false, usedMemory: false, usedLocalRuntime: false };
+}
+
 function buildFrozenSnapshot(
   status: ExecutionStatus,
   lastErrorMessage: string,
@@ -244,7 +257,7 @@ function executionPlansDevMismatch(a: ExecutionPlan, b: ExecutionPlan): boolean 
 /**
  * Workbench：主区「时间线 / 输入」+ 右侧历史侧栏（D-7-5J）。
  * D-3-2：单 ExecutionBlock 承载当前会话执行 UI（状态机与数据流未改）。
- * D-7-4Z：**权威执行真相源**为 `useExecutionSession()`；本组件内 Core / AI 网关调用仅增强与旁路记录，执行流不得由其响应状态驱动。
+ * D-7-4Z：**权威执行真相源**为 `useExecutionSession()`；任务/结果以 Shared Core `POST /v1/tasks`、`/run` 为准；已移除旧网关 `/task`、`/result` 旁路。
  *
  * D-7-5T 硬规则：每次挂载从 `loadWorkbenchUiSnapshot()` 取初值，禁止模块级缓存导致切页后状态回退。
  */
@@ -280,7 +293,7 @@ export const WorkbenchConsole = () => {
   const [appliedTemplate, setAppliedTemplate] = useState<AppliedTemplateSource | null>(null);
   /** D-7-4D：最近一次 start 的 templateId（chip 清除后仍可继承元数据） */
   const [runSeedTemplateId, setRunSeedTemplateId] = useState<string | null>(null);
-  /** E-3：GET /templates/:id 成功后供 session.start 透传（须在 async 前快照） */
+  /** E-3：GET /v1/templates/:id（或内置 sys-*）成功后供 session.start 透传（须在 async 前快照） */
   const templateCoreContentRef = useRef<TemplateCoreContentNormalized | null>(null);
   /** E-3+：模板正式字段摘要；提交前与 `templateContext` 落盘一致 */
   const templateFormalMetaRef = useRef<ControllerTemplateFormalMetaV1 | null>(null);
@@ -340,7 +353,7 @@ export const WorkbenchConsole = () => {
   const clearAutomationReadonlyPreview = useCallback(() => setAutomationReadonlyPreview(null), []);
   const [automationDraftLoadHint, setAutomationDraftLoadHint] = useState<string | null>(null);
   const automationHintTimerRef = useRef<number | null>(null);
-  /** D-7-3A：Core Backend /task 通道反馈（非阻塞本地 session） */
+  /** 工作台本地分析/规划等步骤的轻提示（不阻塞会话主链） */
   const [coreChannelNotice, setCoreChannelNotice] = useState<string | null>(null);
   const coreChannelNoticeTimerRef = useRef<number | null>(null);
   /** D-4：本轮 submit 从 Core Memory 注入的轻量提示（非完整列表） */
@@ -361,10 +374,8 @@ export const WorkbenchConsole = () => {
   const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
   /** D-7-6K：时间线滚动容器（.execution-timeline-area） */
   const timelineScrollRef = useRef<HTMLDivElement | null>(null);
-  /** D-7-6F：`session.start` 前 isBusy 仍为 idle；ref 同步挡连点，state 驱动输入/按钮禁用 */
+  /** D-7-6F：`session.start` 前 isBusy 仍为 idle；ref 同步挡连点；发送门控与文本框可编辑性解耦（见 composer常量） */
   const chatSubmitFlightRef = useRef(false);
-  /** Intent AI v1：防止预览阶段连点重复请求 */
-  const intentPreviewAiFlightRef = useRef(false);
   /** Workflow / Task Chain v1 */
   const chainModeRef = useRef(false);
   const chainAutoRemainingRef = useRef(0);
@@ -374,7 +385,22 @@ export const WorkbenchConsole = () => {
   const lastWorkbenchSubmitUserLineRef = useRef("");
   const [chatSubmitInFlight, setChatSubmitInFlight] = useState(false);
   const [goalUiTick, setGoalUiTick] = useState(0);
-  const [pendingIntentPreview, setPendingIntentPreview] = useState<PendingIntentPreviewStateV1 | null>(null);
+  /** 分析完成 → 需确认时才挂起；默认可自动执行则直接 session.start */
+  const [pendingExecutionConfirm, setPendingExecutionConfirm] = useState<{
+    runTurnId: string;
+    message: string;
+    payload: StartTaskPayload;
+    confirmLabel: string;
+    cancelLabel: string;
+  } | null>(null);
+  const pendingExecutionConfirmRef = useRef(pendingExecutionConfirm);
+  useEffect(() => {
+    pendingExecutionConfirmRef.current = pendingExecutionConfirm;
+  }, [pendingExecutionConfirm]);
+  /** 入口层本地 analyze 生成的 plan 摘要，用于「开始执行」确认文案 */
+  const lastEntryPlanSummaryRef = useRef("");
+  /** 本地入口判定可执行（含内容类放宽）；与 deriveWorkbenchExecutable 二选一 */
+  const entryPassRef = useRef(false);
   /** D-7-6G：执行中再次提交时的轻提示（自动消失） */
   const [busySubmitToast, setBusySubmitToast] = useState<string | null>(null);
   const busySubmitToastTimerRef = useRef<number | null>(null);
@@ -646,7 +672,28 @@ export const WorkbenchConsole = () => {
 
   const handleChatSubmit = useCallback(
     async (payload: StartTaskPayload) => {
-      if (session.isBusy) {
+      const sess = sessionRef.current;
+      const executionGateBusy = sess.isBusy || chatSubmitInFlight;
+      const submitDisabledApprox = !prompt.trim() || chatSubmitInFlight || replayMode;
+      const canSendApprox = Boolean(prompt.trim()) && !chatSubmitInFlight && !replayMode;
+      if (isExecutionBlockingSubmit(sess.status)) {
+        if (import.meta.env.DEV) {
+          // eslint-disable-next-line no-console -- P0：发送拦截排障
+          console.debug("[WorkbenchConsole] submit blocked (execution)", {
+            sessionIsBusy: sess.isBusy,
+            executionGateBusy,
+            status: sess.status,
+            isTerminalDerived: isExecutionTerminal(sess.status),
+            streamRaw: sess.eventStream.rawStatus || null,
+            currentTaskId: sess.currentTaskId,
+            currentRunId: sess.lastCoreResultRunId,
+            chatSubmitInFlight,
+            replayMode,
+            submitDisabled: submitDisabledApprox,
+            canSend: canSendApprox,
+            blockingReason: "isExecutionBlockingSubmit"
+          });
+        }
         if (busySubmitToastTimerRef.current != null) {
           window.clearTimeout(busySubmitToastTimerRef.current);
         }
@@ -662,36 +709,17 @@ export const WorkbenchConsole = () => {
       if (chainModeRef.current && !payload.workflowChainAuto) {
         stopWorkflowChain();
       }
-      const bypassIntentPreview =
-        Boolean(payload.skipIntentPreview) ||
-        replayMode ||
-        Boolean(historyReadonlyPreview) ||
-        Boolean(savedResultReadonlyPreview) ||
-        Boolean(automationReadonlyPreview);
-      if (!bypassIntentPreview) {
-        if (intentPreviewAiFlightRef.current) return;
-        intentPreviewAiFlightRef.current = true;
-        try {
-          const enrichedIntent = await buildEnrichedIntentWithAI(p0);
-          setPendingIntentPreview({
-            originalInput: p0,
-            enrichedIntent,
-            payloadSnapshot: { ...payload, prompt: p0 }
-          });
-          clearWorkbenchDraftAfterSuccessfulSubmit();
-          promptRef.current = "";
-          setPrompt("");
-        } finally {
-          intentPreviewAiFlightRef.current = false;
-        }
-        return;
-      }
-      if (payload.skipIntentPreview) {
-        setPendingIntentPreview(null);
-      }
+      void payload.skipIntentPreview;
       if (chatSubmitFlightRef.current) return;
       chatSubmitFlightRef.current = true;
       setChatSubmitInFlight(true);
+      try {
+      setPendingExecutionConfirm(null);
+      lastEntryPlanSummaryRef.current = "";
+      entryPassRef.current = false;
+      if (isExecutionActionAllowed(session.status, "clear")) {
+        session.clear();
+      }
       const parsedGoal = parseGoalIntentFromUserLine(p0);
       if (parsedGoal) {
         persistNewActiveGoal(parsedGoal);
@@ -700,7 +728,6 @@ export const WorkbenchConsole = () => {
       /** E-3：`ChatInputBar` 会在同步返回后立即清 chip/ref；须在任何 await 之前快照 Core content */
       const capturedTemplateCore = templateCoreContentRef.current;
       const capturedTemplateFormalMeta = templateFormalMetaRef.current;
-      try {
       /** D-7-5W：从「重新编辑」发送时仍追加新 turn，不覆盖、不删原 turn */
       setEditingTurnId(null);
       setHistoryReadonlyPreview(null);
@@ -749,6 +776,7 @@ export const WorkbenchConsole = () => {
       };
 
       const noticeLines: string[] = [];
+      let entryLocalSnapshot: AnalyzeResult | null = null;
       let coreAnalysis: TaskAnalysisResult | null = null;
       let corePlan: TaskPlan | null = null;
       let corePlanTrust: ExecutionTrustAssessment | undefined;
@@ -815,6 +843,83 @@ export const WorkbenchConsole = () => {
         size: a.size
       }));
       const attachCount = effectiveAttachments?.length ?? 0;
+
+      if (!payload.workflowChainAuto) {
+        const entryLocal = await runLocalEntryAnalyze({
+          prompt: executionPrompt,
+          requestedMode: effectiveRequestedMode,
+          attachments: effectiveAttachments
+        });
+        entryLocalSnapshot = entryLocal;
+        const clarifyLine =
+          entryLocal.clarificationLine?.trim() ||
+          (entryLocal.questions?.length ? entryLocal.questions[0]?.trim() : "");
+        if (entryLocal.needsClarification && clarifyLine) {
+          const body = clarifyLine;
+          setWorkbenchTurns((prev) => {
+            const idx = prev.findIndex((t) => t.id === runTurnId);
+            if (idx < 0) return prev;
+            const now = new Date().toISOString();
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              status: "success",
+              updatedAt: now,
+              resultTitle: " ",
+              resultBody: body,
+              resultKind: "content",
+              frozen: {
+                status: "success",
+                resultKind: "content",
+                resultTitle: " ",
+                resultBody: body
+              },
+              executionSource: emptyWorkbenchExecutionSource()
+            };
+            workbenchTurnsRef.current = next;
+            return next;
+          });
+          liveTurnIdRef.current = null;
+          setLiveTurnId(null);
+          return;
+        }
+        if (!entryLocal.canExecute) {
+          const reason = entryLocal.reason?.trim() || "";
+          const body = reason
+            ? `这个我暂时没法直接帮你做：${reason}。你可以再说具体一点，比如想写什么、处理什么。`
+            : "这个我暂时没法直接帮你做。你可以再说具体一点。";
+          setWorkbenchTurns((prev) => {
+            const idx = prev.findIndex((t) => t.id === runTurnId);
+            if (idx < 0) return prev;
+            const now = new Date().toISOString();
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              status: "success",
+              updatedAt: now,
+              resultTitle: " ",
+              resultBody: body,
+              resultKind: "content",
+              frozen: {
+                status: "success",
+                resultKind: "content",
+                resultTitle: " ",
+                resultBody: body
+              },
+              executionSource: emptyWorkbenchExecutionSource()
+            };
+            workbenchTurnsRef.current = next;
+            return next;
+          });
+          liveTurnIdRef.current = null;
+          setLiveTurnId(null);
+          return;
+        }
+        lastEntryPlanSummaryRef.current = entryLocal.planSummary?.trim() ?? "";
+        entryPassRef.current = true;
+      } else {
+        entryPassRef.current = true;
+      }
       const templateProvenance = buildControllerTemplateProvenance({
         templateId: tidSubmit,
         capturedFormal: capturedTemplateFormalMeta,
@@ -1112,13 +1217,12 @@ export const WorkbenchConsole = () => {
         }
       }
 
-      /** D-7-4Z：`/task` 旁路；尊重 Data Safety「服务端历史/旁路写入」门控 */
-      if (loadAppPreferences().dataSafety.allowServerHistoryWrite) {
-        await recordTaskPromptToAiGatewayBestEffort(executionPrompt, routerDecisionForSession);
+      if (import.meta.env.DEV && noticeLines.length) {
+        setCoreChannelNotice(noticeLines.join("\n"));
+        scheduleClearNotice();
+      } else {
+        setCoreChannelNotice(null);
       }
-
-      setCoreChannelNotice(noticeLines.length ? noticeLines.join("\n") : null);
-      scheduleClearNotice();
 
       setRunSeedTemplateId(payload.templateId?.trim() || null);
 
@@ -1128,7 +1232,8 @@ export const WorkbenchConsole = () => {
         ...payloadForSession
       } = payload;
       lastWorkbenchSubmitUserLineRef.current = p0;
-      session.start({
+
+      const sharedStartPayload: StartTaskPayload = {
         ...payloadForSession,
         prompt: executionPrompt,
         requestedMode: effectiveRequestedMode,
@@ -1142,8 +1247,104 @@ export const WorkbenchConsole = () => {
         ...(routerDecisionForSession ? { routerDecision: routerDecisionForSession } : {}),
         ...(lightMemoryHits.length > 0 ? { lightMemoryHits } : {}),
         submitUserLine: p0
-      });
-      window.setTimeout(() => flushWorkbenchUiPersist(), 0);
+      };
+
+      if (payload.workflowChainAuto) {
+        setPendingExecutionConfirm(null);
+        session.start(sharedStartPayload);
+        window.setTimeout(() => flushWorkbenchUiPersist(), 0);
+        return;
+      }
+
+      if (coreSafety?.decision === "block") {
+        const msg = safetyBlockUserFacingMessage(coreSafety);
+        setWorkbenchTurns((prev) => {
+          const idx = prev.findIndex((t) => t.id === runTurnId);
+          if (idx < 0) return prev;
+          const now = new Date().toISOString();
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            status: "error",
+            updatedAt: now,
+            error: msg,
+            frozen: { status: "error", errorMessage: msg },
+            executionSource: emptyWorkbenchExecutionSource()
+          };
+          workbenchTurnsRef.current = next;
+          return next;
+        });
+        liveTurnIdRef.current = null;
+        setLiveTurnId(null);
+        return;
+      }
+
+      const execCheck =
+        payload.workflowChainAuto || entryPassRef.current
+          ? { ok: true as const }
+          : deriveWorkbenchExecutable(analysisForLocalPlan);
+      if (!execCheck.ok) {
+        const body =
+          execCheck.userMessage ?? "这个我暂时没法直接帮你做。你可以再说具体一点。";
+        setWorkbenchTurns((prev) => {
+          const idx = prev.findIndex((t) => t.id === runTurnId);
+          if (idx < 0) return prev;
+          const now = new Date().toISOString();
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            status: "success",
+            updatedAt: now,
+            resultTitle: " ",
+            resultBody: body,
+            resultKind: "content",
+            frozen: {
+              status: "success",
+              resultKind: "content",
+              resultTitle: " ",
+              resultBody: body
+            },
+            executionSource: emptyWorkbenchExecutionSource()
+          };
+          workbenchTurnsRef.current = next;
+          return next;
+        });
+        liveTurnIdRef.current = null;
+        setLiveTurnId(null);
+        return;
+      }
+
+      const planForGate = corePlan ?? effectivePlanForTrust;
+      const entryForGate: AnalyzeResult =
+        entryLocalSnapshot ??
+        ({
+          canExecute: true,
+          needsClarification: false,
+          riskLevel: "L1"
+        } as AnalyzeResult);
+
+      const autoRun = shouldAutoExecute(entryForGate, analysisForLocalPlan, planForGate);
+
+      if (autoRun) {
+        setPendingExecutionConfirm(null);
+        session.start(sharedStartPayload);
+        window.setTimeout(() => flushWorkbenchUiPersist(), 0);
+      } else {
+        const oneLiner =
+          lastEntryPlanSummaryRef.current.trim() || "按你的说明生成并整理结果。";
+        const high = isHighRiskConfirmTone(analysisForLocalPlan, entryForGate);
+        const confirmMsg = high
+          ? buildHighRiskConfirmMessage(p0, entryForGate, analysisForLocalPlan)
+          : buildLightConfirmMessage(oneLiner);
+        setPendingExecutionConfirm({
+          runTurnId,
+          message: confirmMsg,
+          payload: sharedStartPayload,
+          confirmLabel: high ? "继续" : "开始",
+          cancelLabel: "取消"
+        });
+        window.setTimeout(() => flushWorkbenchUiPersist(), 0);
+      }
       } finally {
         chatSubmitFlightRef.current = false;
         setChatSubmitInFlight(false);
@@ -1151,6 +1352,9 @@ export const WorkbenchConsole = () => {
     },
     [
       session,
+      prompt,
+      chatSubmitInFlight,
+      replayMode,
       flushWorkbenchUiPersist,
       u.workbench.busySubmitNotice,
       u.workbench.trustL1MemoryHint,
@@ -1162,7 +1366,6 @@ export const WorkbenchConsole = () => {
       trustConfirmL2,
       templateLib,
       u.workbench.dataSafetyAttachmentsOmitted,
-      replayMode,
       historyReadonlyPreview,
       savedResultReadonlyPreview,
       automationReadonlyPreview,
@@ -1170,8 +1373,28 @@ export const WorkbenchConsole = () => {
     ]
   );
 
+  const handleConfirmPendingExecution = useCallback(() => {
+    const p = pendingExecutionConfirmRef.current;
+    if (!p) return;
+    setPendingExecutionConfirm(null);
+    session.start(p.payload);
+  }, [session]);
+
+  const handleCancelPendingExecution = useCallback(() => {
+    const p = pendingExecutionConfirmRef.current;
+    if (!p) return;
+    setPendingExecutionConfirm(null);
+    setWorkbenchTurns((prev) => {
+      const next = prev.filter((t) => t.id !== p.runTurnId);
+      workbenchTurnsRef.current = next;
+      return next;
+    });
+    liveTurnIdRef.current = null;
+    setLiveTurnId(null);
+  }, []);
+
   const startWorkflowChain = useCallback(() => {
-    if (session.isBusy || chatSubmitInFlight) return;
+    if (isExecutionBlockingSubmit(sessionRef.current.status) || chatSubmitInFlight) return;
     if (session.status !== "success") return;
     if (!isWorkflowChainAllowed(session.lastTaskAnalysis, session.resolvedMode, session.currentResult)) return;
     const next = pickFirstNextSuggestion(session.currentResult?.metadata ?? null);
@@ -1188,7 +1411,6 @@ export const WorkbenchConsole = () => {
       workflowChainAuto: true
     });
   }, [
-    session.isBusy,
     chatSubmitInFlight,
     session.status,
     session.lastTaskAnalysis,
@@ -1201,7 +1423,7 @@ export const WorkbenchConsole = () => {
 
   useEffect(() => {
     if (!chainModeRef.current) return;
-    if (session.isBusy) return;
+    if (isExecutionBlockingSubmit(sessionRef.current.status)) return;
     if (session.status !== "success") return;
     if (!isWorkflowChainAllowed(session.lastTaskAnalysis, session.resolvedMode, session.currentResult)) {
       stopWorkflowChain();
@@ -1229,7 +1451,6 @@ export const WorkbenchConsole = () => {
     });
   }, [
     session.status,
-    session.isBusy,
     session.currentTaskId,
     session.lastCoreResultRunId,
     session.currentResult,
@@ -1566,7 +1787,7 @@ export const WorkbenchConsole = () => {
     appliedWorkbenchMemoryLabels
   ]);
 
-  /** E-3：/workbench?templateId= 仅自 Core GET /templates/:id 引导；本地库不作主源 */
+  /** E-3 / P2：/workbench?templateId= 自 Core GET /v1/templates/:id 或内置 sys-* 引导；本地库不作主源 */
   useEffect(() => {
     const tid = searchParams.get("templateId")?.trim();
     if (!tid) {
@@ -1772,7 +1993,6 @@ export const WorkbenchConsole = () => {
   const fillPromptFromQuickAccess = useCallback((text: string) => {
     const t = text.trim();
     if (!t) return;
-    setPendingIntentPreview(null);
     setEditingTurnId(null);
     setHistoryReplayTask(null);
     setHistoryReadonlyPreview(null);
@@ -1903,10 +2123,40 @@ export const WorkbenchConsole = () => {
   }, [replayMode]);
 
   /* D-7-5P：终态 success/error/stopped 保留展示，但 isBusy 为 false，输入可继续发下一条 */
-  /* D-7-6F：chatSubmitInFlight 覆盖 Core 前置 async 段，与 isBusy 一并门控 */
+  /* P0：发送钮仅短窗 chatSubmitInFlight + replay + 空 prompt；整段 session.isBusy 只锁 chrome / 链式面板，不锁发送 */
   const executionGateBusy = session.isBusy || chatSubmitInFlight;
-  const composerLocked = executionGateBusy || replayMode;
-  const submitDisabled = !prompt.trim() || executionGateBusy || replayMode;
+  const composerChromeLocked = executionGateBusy || replayMode;
+  const composerTextInputLocked = replayMode;
+  const submitDisabled = !prompt.trim() || chatSubmitInFlight || replayMode;
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const canSend = Boolean(prompt.trim()) && !chatSubmitInFlight && !replayMode;
+    const greyReasons: string[] = [];
+    if (!prompt.trim()) greyReasons.push("emptyPrompt");
+    if (chatSubmitInFlight) greyReasons.push("chatSubmitInFlight");
+    if (replayMode) greyReasons.push("replayMode");
+    // eslint-disable-next-line no-console -- P0 发送钮排障
+    console.debug("[WorkbenchConsole] send gate", {
+      canSend,
+      submitDisabled,
+      greyReasons: greyReasons.length ? greyReasons : "none",
+      chatSubmitInFlight,
+      sessionIsBusy: session.isBusy,
+      sessionStatus: session.status,
+      replayMode,
+      executionGateBusy,
+      promptLen: prompt.length
+    });
+  }, [
+    prompt,
+    submitDisabled,
+    chatSubmitInFlight,
+    session.isBusy,
+    session.status,
+    replayMode,
+    executionGateBusy
+  ]);
 
   const workflowChainPanel = useMemo(() => {
     if (
@@ -2040,7 +2290,7 @@ export const WorkbenchConsole = () => {
         {(activeStep.humanMessage ?? activeStep.description) ? (
           <p className="human-step-confirm__message">{activeStep.humanMessage ?? activeStep.description}</p>
         ) : null}
-        <p className="human-step-confirm__hint">当前为流水线中的正式「待确认」步骤；确认后继续，拒绝则终止后续步骤。</p>
+        <p className="human-step-confirm__hint">此步骤需要你的确认后再继续。</p>
         <div className="human-step-confirm__actions">
           <button type="button" className="human-step-confirm__btn" onClick={() => session.confirmCurrentStep()}>
             {activeStep.metadata && isPermissionGrantStepMetadata(activeStep.metadata) ? "确认并继续" : "确认继续"}
@@ -2115,30 +2365,20 @@ export const WorkbenchConsole = () => {
     session.resolvedMode
   ]);
 
-  const dataPostureRows = useMemo(
-    () =>
-      buildExecutionDataPostureRows(
-        {
-          resolvedMode: session.resolvedMode,
-          loggedIn: Boolean(userId?.trim()),
-          prefs: loadAppPreferences()
-        },
-        u.workbench.dataPosture
-      ),
-    [session.resolvedMode, userId, appPrefsRevision, u.workbench.dataPosture]
-  );
-
-  const controllerTimelineEl =
-    liveWorkbenchTurn?.controllerPlan != null ? (
-      <ControllerPlanTimeline
-        plan={liveWorkbenchTurn.controllerPlan}
-        alignment={liveWorkbenchTurn.coreControllerAlignment ?? null}
-        routerDecision={liveWorkbenchTurn.routerDecision ?? session.lastRouterDecision ?? null}
-      />
-    ) : null;
-
   const workbenchRouterDecisionForResult =
     liveWorkbenchTurn?.routerDecision ?? session.lastRouterDecision ?? null;
+
+  const workbenchRunningStatusLine = useMemo(() => {
+    if (!WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME) return null;
+    if (
+      session.status !== "running" &&
+      session.status !== "validating" &&
+      session.status !== "queued"
+    ) {
+      return null;
+    }
+    return "正在处理…";
+  }, [session.status]);
 
   const resultAssetization = useMemo(() => {
     if (
@@ -2286,18 +2526,18 @@ export const WorkbenchConsole = () => {
         lastErrorMessage={session.lastErrorMessage}
         authEscalation={session.lastAuthEscalation}
         lastPrompt={session.lastPrompt}
-        streamLogs={es.logs}
+        streamLogs={WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME ? [] : es.logs}
         streamResult={es.result}
-        streamSteps={es.steps}
+        streamSteps={WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME ? [] : es.steps}
         streamError={es.error}
         unifiedResult={session.currentResult}
-        stepResults={session.stepResults}
+        stepResults={WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME ? null : session.stepResults}
         coreResultRunId={session.lastCoreResultRunId}
         simplifiedPresentation
-        showExecutionProvenance={showExecutionSourceAndSteps}
+        showExecutionProvenance={showExecutionSourceAndSteps && !WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME}
         simplifiedProgressHints={simplifiedProgressHints}
-        executionSourceStrip={executionSourceStrip}
-        routerDecision={workbenchRouterDecisionForResult}
+        executionSourceStrip={WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME ? null : executionSourceStrip}
+        routerDecision={WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME ? null : workbenchRouterDecisionForResult}
         onSaveAsAutomation={
           session.status === "success" && session.currentResult != null ? handleSaveAsAutomation : undefined
         }
@@ -2308,6 +2548,8 @@ export const WorkbenchConsole = () => {
         }}
         resultAssetization={resultAssetization}
         workflowChain={workflowChainPanel}
+        entryMinimalResultUi={WORKBENCH_HIDE_INTERNAL_EXECUTION_CHROME}
+        runningStatusLine={workbenchRunningStatusLine ?? undefined}
       />
     );
 
@@ -2325,46 +2567,6 @@ export const WorkbenchConsole = () => {
     ) : null;
 
   const hasExecutionPlanSteps = Boolean(session.executionPlan?.steps.length);
-  const showStepsPanel = hasExecutionPlanSteps && showExecutionSourceAndSteps;
-  const capSpecTop = session.lastTaskAnalysis?.metadata?.contentCapability;
-  const showCapabilityTopBanner = Boolean(
-    session.lastTaskAnalysis?.intent === "content_capability" &&
-      capSpecTop &&
-      session.executionPlan?.steps.some((s) => s.type === "capability")
-  );
-  const capabilityTopBannerCopy =
-    showCapabilityTopBanner && capSpecTop ? getContentCapabilityBannerCopy(capSpecTop) : null;
-
-  const capabilityTopBanner = capabilityTopBannerCopy ? (
-    <div className="workbench-capability-banner" role="region" aria-label="能力执行模式">
-      <div className="workbench-capability-banner__badge">{capabilityTopBannerCopy.badge}</div>
-      <h3 className="workbench-capability-banner__headline">{capabilityTopBannerCopy.headline}</h3>
-      <p className="workbench-capability-banner__detail">{capabilityTopBannerCopy.detail}</p>
-      <p className="workbench-capability-banner__meta">
-        <span className="workbench-capability-banner__meta-k">能力类型（capabilityType）</span>
-        {capabilityTopBannerCopy.typeLine}
-      </p>
-      <p className="workbench-capability-banner__meta">
-        <span className="workbench-capability-banner__meta-k">操作（operation）</span>
-        {capabilityTopBannerCopy.operationLine}
-      </p>
-      <div className="workbench-capability-banner__actions">
-        <button
-          type="button"
-          className="ui-btn ui-btn--secondary"
-          onClick={() => session.rerunAsNormalContent()}
-          disabled={!session.lastPrompt.trim() || chatSubmitInFlight}
-        >
-          不使用能力执行，按普通内容生成
-        </button>
-      </div>
-    </div>
-  ) : null;
-
-  const dataPostureEl =
-    showExecutionSourceAndSteps && dataPostureRows.length > 0 ? (
-      <DataPostureStrip title={u.workbench.dataPosture.title} rows={dataPostureRows} />
-    ) : null;
 
   const blockBody =
     session.resolvedMode === "computer" && !hasExecutionPlanSteps ? (
@@ -2375,8 +2577,6 @@ export const WorkbenchConsole = () => {
         computerEvents={session.computerExecutionEvents ?? undefined}
         embedFooterOnly
       >
-        {dataPostureEl}
-        {controllerTimelineEl}
         {replayToolbar}
         {workbenchStopBar}
         {humanConfirmBanner}
@@ -2384,16 +2584,6 @@ export const WorkbenchConsole = () => {
       </ComputerExecutionPanel>
     ) : (
       <>
-        {dataPostureEl}
-        {controllerTimelineEl}
-        {capabilityTopBanner}
-        {showStepsPanel ? (
-          <ExecutionPlanStepsPanel
-            plan={session.executionPlan}
-            currentStepIndex={session.currentStepIndex}
-            stepResults={session.stepResults}
-          />
-        ) : null}
         {replayToolbar}
         {workbenchStopBar}
         {humanConfirmBanner}
@@ -2467,7 +2657,17 @@ export const WorkbenchConsole = () => {
                       </div>
                       {turnFrozenForDisplay(turn) ? (
                         <WorkbenchFrozenTurnBody turn={turn} />
-                      ) : turn.id === liveTurnId ? (
+                      ) : turn.id === liveTurnId && pendingExecutionConfirm?.runTurnId === turn.id ? (
+                        <div className="workbench-conversation__assistant">
+                          <WorkbenchExecutionConfirmGate
+                            message={pendingExecutionConfirm.message}
+                            confirmLabel={pendingExecutionConfirm.confirmLabel}
+                            cancelLabel={pendingExecutionConfirm.cancelLabel}
+                            onConfirm={handleConfirmPendingExecution}
+                            onCancel={handleCancelPendingExecution}
+                          />
+                        </div>
+                      ) : turn.id === liveTurnId && chatSubmitInFlight && !pendingExecutionConfirm ? null : turn.id === liveTurnId ? (
                         <div className="workbench-conversation__assistant">{blockBody}</div>
                       ) : null}
                     </div>
@@ -2589,60 +2789,13 @@ export const WorkbenchConsole = () => {
                 }
               />
             ) : null}
-            {pendingIntentPreview && !replayMode ? (
-              <div
-                className="workbench-intent-preview-banner text-sm mb-3"
-                role="region"
-                aria-label="执行前预览"
-                style={{
-                  padding: "12px 14px",
-                  borderRadius: "var(--radius-lg, 8px)",
-                  border: "1px solid var(--border-default, rgba(255,255,255,0.12))",
-                  background: "var(--surface-card, var(--bg-card))"
-                }}
-              >
-                <div className="font-medium text-primary mb-1">系统理解为：</div>
-                <p className="text-primary mb-1">
-                  {formatIntentPreviewPrimaryLine(pendingIntentPreview.enrichedIntent)}
-                </p>
-                <p className="text-muted mb-3" style={{ fontSize: "0.8125rem" }}>
-                  执行方式：{pendingIntentPreview.enrichedIntent.executionMode}
-                </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <button
-                    type="button"
-                    className="btn btn--primary btn--sm"
-                    onClick={() => {
-                      const snap = pendingIntentPreview;
-                      if (!snap) return;
-                      setPendingIntentPreview(null);
-                      void handleChatSubmit({ ...snap.payloadSnapshot, skipIntentPreview: true });
-                    }}
-                  >
-                    执行
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--secondary btn--sm"
-                    onClick={() => {
-                      const snap = pendingIntentPreview;
-                      if (!snap) return;
-                      setPendingIntentPreview(null);
-                      setPrompt(snap.originalInput);
-                      promptRef.current = snap.originalInput;
-                    }}
-                  >
-                    修改
-                  </button>
-                </div>
-              </div>
-            ) : null}
             <ChatInputBar
               prompt={prompt}
               setPrompt={setPrompt}
-              locked={composerLocked}
+              locked={composerChromeLocked}
+              disableTextInput={composerTextInputLocked}
               submitDisabled={submitDisabled}
-              sessionBusy={executionGateBusy}
+              submitInFlight={chatSubmitInFlight}
               conversationalInput
               initialTaskMode={workbenchInitialTaskMode}
               onTaskModeChange={(mode) => {

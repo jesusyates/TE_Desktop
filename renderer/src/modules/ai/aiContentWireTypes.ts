@@ -1,5 +1,5 @@
 /**
- * G-1A：/ai/content 归一化结果与失败口径（generate / summarize 共用）。
+ * G-1A：内容生成成功态的统一消费形（`parseSharedCoreAiExecuteResponse` 产出；旧 `/ai/content` 已弃用）。
  */
 
 import type { ResultSource } from "../result/resultTypes";

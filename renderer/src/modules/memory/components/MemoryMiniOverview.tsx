@@ -19,8 +19,13 @@ type Props = {
 function aggregateHintPatterns(items: MemoryListItemVm[]) {
   const m = new Map<string, { count: number }>();
   for (const it of items) {
-    if (it.memoryType !== "successful_task_hint") continue;
-    const k = it.key.trim() || it.memoryType;
+    const hintLike =
+      it.memoryType === "successful_task_hint" || it.memoryType === "pattern";
+    if (!hintLike) continue;
+    const k =
+      it.memoryType === "pattern"
+        ? (it.valuePreview.trim().slice(0, 80) || it.memoryId || it.memoryType)
+        : it.key.trim() || it.memoryType;
     const row = m.get(k) ?? { count: 0 };
     row.count += 1;
     m.set(k, row);
@@ -33,7 +38,7 @@ function aggregateHintPatterns(items: MemoryListItemVm[]) {
 }
 
 /**
- * D-6-3 / D-3：长期记忆概览 — Core 走正式 /memory/list；能力统计仍用本地快照（列表项不含 capability 维）。
+ * D-6-3 / P1：长期记忆概览 — Core走 `GET /v1/memory`；能力统计仍用本地快照。
  */
 export function MemoryMiniOverview({ status }: Props) {
   const u = useUiStrings();

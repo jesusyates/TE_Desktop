@@ -8,6 +8,7 @@ import type { OutputTrust, ResultSource, TaskResult } from "../modules/result/re
 import { deriveHistoryListProvenance } from "../modules/history/historyListProvenance";
 import type { ResultPackage } from "../types/task";
 import { toTaskResult } from "../modules/result/resultAdapters";
+import { sanitizeResultContent, sanitizeTaskResultForDisplay } from "../modules/result/sanitizeResultContent";
 import { executionTaskToDomainModel, taskResultToDomainModel } from "../domain";
 import { peekExecutionDetailCache } from "../services/executionDetailLocalCache";
 import type {
@@ -60,7 +61,8 @@ export function mapTaskResultToResultVM(
   result: TaskResult,
   meta?: { source?: string; hash?: string; hasCoreSync?: boolean }
 ): ResultVM {
-  const d = taskResultToDomainModel(undefined, result, { hash: meta?.hash, hasCoreSync: meta?.hasCoreSync });
+  const cleaned = sanitizeTaskResultForDisplay(result);
+  const d = taskResultToDomainModel(undefined, cleaned, { hash: meta?.hash, hasCoreSync: meta?.hasCoreSync });
   const kind = d.kind === "content" || d.kind === "computer" ? d.kind : "unknown";
   return {
     kind,
@@ -116,10 +118,12 @@ export function serializeExecutionLogsForDisplay(logs: unknown): string {
 export function mapResultPackageToResultVM(pkg: ResultPackage): ResultVM {
   const tags = Array.isArray(pkg.tags) ? pkg.tags.join(", ") : "";
   const summaryParts = [pkg.hook, pkg.copywriting, tags].filter((s) => String(s).trim() !== "");
+  const body = sanitizeResultContent(pkg.body ?? "", {});
+  const title = sanitizeResultContent(pkg.title?.trim() || "", { forTitle: true }).trim() || "—";
   return {
     kind: "unknown",
-    title: pkg.title?.trim() || "—",
-    body: pkg.body ?? "",
+    title,
+    body,
     summary: summaryParts.join(" · ") || pkg.hook || "",
     source: "result-package"
   };

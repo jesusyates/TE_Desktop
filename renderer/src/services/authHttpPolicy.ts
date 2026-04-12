@@ -1,5 +1,5 @@
 /**
- * MODULE C-6：apiClient / aiGateway 响应分流策略（与登录页、hydrate 职责边界分离）。
+ * MODULE C-6：Shared Core `apiClient` 响应分流策略（与登录页、hydrate 职责边界分离）。
  */
 
 /** 这些路径的 401 不代表「当前会话在业务侧仍有效」，由调用方处理（登录失败、登出尽力而为）。 */

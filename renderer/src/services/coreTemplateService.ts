@@ -1,9 +1,10 @@
 /**
- * E-1 / E-2 / E-3：AICS Core 模板查询与保存（GET /templates/list、GET /templates/:id、POST /templates/save）。须经 AI 网关访问 aics-core。
+ * P2：模板主路径 — Shared Core `GET/POST /v1/templates`、`GET /v1/templates/:id`。
+ * 内置系统模板（sys-*）仅前端编排，详情走本地合成；列表「书库」页与旧网关语义对齐。
  */
-import { aiGatewayClient } from "./apiClient";
+import { apiClient } from "./apiClient";
+import { normalizeV1ResponseBody } from "./v1Envelope";
 import type { FormalTemplateRecord } from "../domain/models/formalTemplateRecord";
-import { normalizeFormalTemplateRow } from "../domain/mappers/formalTemplateMapper";
 import type { TaskMode } from "../types/taskMode";
 import type { TemplateVariable } from "../modules/templates/types/template";
 
@@ -15,6 +16,90 @@ export type FetchTemplateListParams = {
   workflowType?: string;
 };
 
+/** 与 templateService 内置条目共 id，供书库 / 最近 / workbench sys-* 解析 */
+const BUILTIN_SYSTEM_FORMAL_TEMPLATES: FormalTemplateRecord[] = [
+  {
+    templateId: "sys-short-video-copy",
+    userId: "",
+    templateType: "workflow",
+    title: "短视频文案骨架",
+    description: "按主题生成钩子、结构、正文要点与发布建议",
+    product: "aics",
+    market: "global",
+    locale: "zh-CN",
+    workflowType: "content",
+    version: "1",
+    audience: "general",
+    isSystem: true,
+    isFavorite: false,
+    createdAt: "2026-01-15T00:00:00.000Z",
+    updatedAt: "2026-01-15T00:00:00.000Z"
+  },
+  {
+    templateId: "sys-product-bullet",
+    userId: "",
+    templateType: "workflow",
+    title: "产品卖点清单",
+    description: "从一句话产品信息扩展卖点条列",
+    product: "aics",
+    market: "global",
+    locale: "zh-CN",
+    workflowType: "content",
+    version: "1",
+    audience: "general",
+    isSystem: true,
+    isFavorite: false,
+    createdAt: "2026-01-14T00:00:00.000Z",
+    updatedAt: "2026-01-14T00:00:00.000Z"
+  },
+  {
+    templateId: "sys-computer-organize",
+    userId: "",
+    templateType: "workflow",
+    title: "桌面文件整理（Computer）",
+    description: "偏向本地执行的整理类任务入口",
+    product: "aics",
+    market: "global",
+    locale: "zh-CN",
+    workflowType: "computer",
+    version: "1",
+    audience: "general",
+    isSystem: true,
+    isFavorite: false,
+    createdAt: "2026-01-13T00:00:00.000Z",
+    updatedAt: "2026-01-13T00:00:00.000Z"
+  }
+];
+
+const BUILTIN_DETAIL_MAP: Record<
+  string,
+  { title: string; description: string; sourcePrompt: string; workflowType: string; updatedAt: string }
+> = {
+  "sys-short-video-copy": {
+    title: "短视频文案骨架",
+    description: "按主题生成钩子、结构、正文要点与发布建议",
+    sourcePrompt:
+      "主题：【在此填写】\n请生成一条短视频文案：包含 Hook、内容结构大纲、正文要点、标签与发布建议。",
+    workflowType: "content",
+    updatedAt: "2026-01-15T00:00:00.000Z"
+  },
+  "sys-product-bullet": {
+    title: "产品卖点清单",
+    description: "从一句话产品信息扩展卖点条列",
+    sourcePrompt:
+      "产品/服务：【在此填写】\n请输出：核心受众、3–5 条卖点、一句行动号召（CTA）。",
+    workflowType: "content",
+    updatedAt: "2026-01-14T00:00:00.000Z"
+  },
+  "sys-computer-organize": {
+    title: "桌面文件整理（Computer）",
+    description: "偏向本地执行的整理类任务入口",
+    sourcePrompt: "请根据我的说明整理指定文件夹中的文件（路径与规则在正文中补充）。",
+    workflowType: "computer",
+    updatedAt: "2026-01-13T00:00:00.000Z"
+  }
+};
+
 function assertOk(status: number, body: unknown): void {
   if (status < 200 || status >= 300) {
     const o = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
@@ -23,47 +108,121 @@ function assertOk(status: number, body: unknown): void {
   }
 }
 
-function parseListPayload(body: unknown): { list: FormalTemplateRecord[]; total: number } {
-  const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  if (obj.success !== true || obj.data == null || typeof obj.data !== "object") {
-    throw new Error("invalid_templates_list");
-  }
-  const d = obj.data as Record<string, unknown>;
-  const raw = d.list;
-  const list: FormalTemplateRecord[] = [];
-  if (Array.isArray(raw)) {
-    for (const it of raw) {
-      const row = normalizeFormalTemplateRow(it);
-      if (row) list.push(row);
-    }
-  }
-  const total = typeof d.total === "number" && Number.isFinite(d.total) ? d.total : list.length;
-  return { list, total };
+function sliceFormalPage(
+  list: FormalTemplateRecord[],
+  page: number,
+  pageSize: number
+): { list: FormalTemplateRecord[]; total: number } {
+  const total = list.length;
+  const start = (page - 1) * pageSize;
+  return { list: list.slice(start, start + pageSize), total };
 }
 
-/** GET /templates/list */
+function filterWorkflow(
+  list: FormalTemplateRecord[],
+  workflowType: string | undefined
+): FormalTemplateRecord[] {
+  const w = workflowType?.trim();
+  if (!w) return list;
+  return list.filter((t) => t.workflowType === w);
+}
+
+/** Core 列表单项（template-record 归一：templateId, description, promptStructure, createdAt）→ FormalTemplateRecord */
+function v1SlimListItemToFormal(raw: unknown): FormalTemplateRecord | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const templateId = String(r.templateId ?? "").trim();
+  if (!templateId) return null;
+  const description = String(r.description ?? "");
+  const ps =
+    r.promptStructure && typeof r.promptStructure === "object" && !Array.isArray(r.promptStructure)
+      ? (r.promptStructure as Record<string, unknown>)
+      : {};
+  const formal =
+    ps.formalMeta && typeof ps.formalMeta === "object" && !Array.isArray(ps.formalMeta)
+      ? (ps.formalMeta as Record<string, unknown>)
+      : {};
+  const title =
+    (typeof r.title === "string" && r.title.trim()) ||
+    description.trim().split("\n")[0]?.trim() ||
+    String(ps.oneLinePrompt ?? "").slice(0, 200) ||
+    "untitled";
+  const workflowType =
+    (typeof formal.workflowType === "string" && formal.workflowType) ||
+    (typeof ps.workflowType === "string" && String(ps.workflowType)) ||
+    "";
+  return {
+    templateId,
+    userId: "",
+    templateType: "workflow",
+    title,
+    description: description && description !== title ? description : "",
+    product: typeof formal.product === "string" ? formal.product : "aics",
+    market: typeof formal.market === "string" ? formal.market : "global",
+    locale: typeof formal.locale === "string" ? formal.locale : "und",
+    workflowType,
+    version: typeof formal.version === "string" ? formal.version : "1",
+    audience: typeof formal.audience === "string" ? formal.audience : "general",
+    isSystem: false,
+    isFavorite: false,
+    createdAt: String(r.createdAt ?? ""),
+    updatedAt: String(r.createdAt ?? "")
+  };
+}
+
+async function fetchV1TemplatesSlimRows(): Promise<Record<string, unknown>[]> {
+  const { data: raw, status } = await apiClient.get<unknown>("/v1/templates", {
+    validateStatus: () => true
+  });
+  assertOk(status, raw);
+  const inner = normalizeV1ResponseBody(raw) as { templates?: unknown };
+  const arr = Array.isArray(inner.templates) ? inner.templates : [];
+  return arr.filter(
+    (x): x is Record<string, unknown> => x != null && typeof x === "object" && !Array.isArray(x)
+  );
+}
+
+/** GET /v1/templates（客户端分页 / 分栏） */
 export async function fetchTemplateList(
   params: FetchTemplateListParams = {}
 ): Promise<{ list: FormalTemplateRecord[]; total: number }> {
   const page = Math.max(1, Math.floor(params.page ?? 1));
   const pageSize = Math.min(100, Math.max(1, Math.floor(params.pageSize ?? 20)));
-  const q = new URLSearchParams();
-  q.set("page", String(page));
-  q.set("pageSize", String(pageSize));
-  if (params.isSystem === true) q.set("isSystem", "true");
-  if (params.isSystem === false) q.set("isSystem", "false");
-  if (params.isFavorite === true) q.set("isFavorite", "true");
-  if (params.isFavorite === false) q.set("isFavorite", "false");
-  if (params.workflowType?.trim()) q.set("workflowType", params.workflowType.trim());
 
-  const { data, status } = await aiGatewayClient.get<unknown>(`/templates/list?${q.toString()}`, {
-    validateStatus: () => true
-  });
-  assertOk(status, data);
-  return parseListPayload(data);
+  if (params.isFavorite === true) {
+    return sliceFormalPage([], page, pageSize);
+  }
+
+  if (params.isSystem === true) {
+    const list = filterWorkflow(BUILTIN_SYSTEM_FORMAL_TEMPLATES, params.workflowType);
+    return sliceFormalPage(list, page, pageSize);
+  }
+
+  const slimRows = await fetchV1TemplatesSlimRows();
+  let mapped = slimRows.map(v1SlimListItemToFormal).filter((x): x is FormalTemplateRecord => x != null);
+  mapped = filterWorkflow(mapped, params.workflowType);
+
+  if (params.isSystem === false) {
+    return sliceFormalPage(mapped, page, pageSize);
+  }
+
+  const seen = new Set<string>();
+  const merged: FormalTemplateRecord[] = [];
+  for (const t of BUILTIN_SYSTEM_FORMAL_TEMPLATES) {
+    if (seen.has(t.templateId)) continue;
+    seen.add(t.templateId);
+    merged.push(t);
+  }
+  for (const t of mapped) {
+    if (seen.has(t.templateId)) continue;
+    seen.add(t.templateId);
+    merged.push(t);
+  }
+  const list = filterWorkflow(merged, params.workflowType);
+  return sliceFormalPage(list, page, pageSize);
 }
 
-/** E-2：POST /templates/save 请求体（禁止包含 userId） */
+/** P2：POST /v1/templates（body 为可回放 JSON，与 domain store 一致） */
 export type SaveTemplateToCorePayload = {
   templateType: string;
   title: string;
@@ -79,26 +238,36 @@ export type SaveTemplateToCorePayload = {
   content: Record<string, unknown>;
 };
 
-/** POST /templates/save */
 export async function saveTemplateToCore(
   payload: SaveTemplateToCorePayload
 ): Promise<{ templateId: string }> {
-  const { data, status } = await aiGatewayClient.post<unknown>("/templates/save", payload, {
-    validateStatus: () => true
-  });
-  assertOk(status, data);
-  const obj = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  if (obj.success !== true || obj.data == null || typeof obj.data !== "object") {
-    const msg = typeof obj.message === "string" ? obj.message : "invalid_templates_save";
-    throw new Error(msg);
-  }
-  const d = obj.data as Record<string, unknown>;
-  const templateId = typeof d.templateId === "string" ? d.templateId.trim() : "";
-  if (!templateId) throw new Error("invalid_templates_save");
-  return { templateId };
+  const body: Record<string, unknown> = {
+    ...payload.content,
+    saveDescription: payload.description,
+    sourceTaskId: payload.sourceTaskId,
+    sourceResultId: payload.sourceResultId,
+    saveTemplateType: payload.templateType,
+    saveWorkflowType: payload.workflowType,
+    saveProduct: payload.product,
+    saveMarket: payload.market,
+    saveLocale: payload.locale,
+    saveVersion: payload.version,
+    saveAudience: payload.audience
+  };
+  const { data: raw, status } = await apiClient.post<unknown>(
+    "/v1/templates",
+    { title: payload.title.trim(), body },
+    { validateStatus: () => true }
+  );
+  assertOk(status, raw);
+  const inner = normalizeV1ResponseBody(raw) as { item?: Record<string, unknown> };
+  const item = inner.item;
+  const id = item && typeof item.id === "string" ? item.id.trim() : "";
+  if (!id) throw new Error("invalid_templates_save");
+  return { templateId: id };
 }
 
-/** E-3：GET /templates/:id 完整行（含 content） */
+/** E-3：详情 VM（content 与旧网关对齐为可执行 JSON） */
 export type TemplateCoreDetailRow = Record<string, unknown> & {
   templateId: string;
   title: string;
@@ -116,6 +285,77 @@ export type TemplateCoreDetailRow = Record<string, unknown> & {
   isSystem?: boolean;
   content: Record<string, unknown>;
 };
+
+function builtinTemplateDetail(templateId: string): TemplateCoreDetailRow | null {
+  const b = BUILTIN_DETAIL_MAP[templateId];
+  if (!b) return null;
+  const wf = b.workflowType;
+  const mode: TaskMode = wf === "computer" ? "computer" : "content";
+  return {
+    templateId,
+    title: b.title,
+    description: b.description,
+    workflowType: wf,
+    product: "aics",
+    market: "global",
+    locale: "und",
+    version: "1",
+    audience: "general",
+    createdAt: b.updatedAt,
+    updatedAt: b.updatedAt,
+    isSystem: true,
+    content: {
+      v: 1,
+      sourcePrompt: b.sourcePrompt,
+      requestedMode: mode,
+      formalMeta: {
+        product: "aics",
+        market: "global",
+        locale: "und",
+        workflowType: wf,
+        version: "1",
+        audience: "general"
+      }
+    }
+  };
+}
+
+function v1GetItemToDetailRow(item: Record<string, unknown>): TemplateCoreDetailRow {
+  const id = String(item.id ?? "").trim();
+  const title = String(item.title ?? "");
+  const body =
+    item.body != null && typeof item.body === "object" && !Array.isArray(item.body)
+      ? (item.body as Record<string, unknown>)
+      : {};
+  const scope = String(item.scope ?? "user");
+  const saveDesc = typeof body.saveDescription === "string" ? body.saveDescription : "";
+  const formal =
+    body.formalMeta && typeof body.formalMeta === "object" && !Array.isArray(body.formalMeta)
+      ? (body.formalMeta as Record<string, unknown>)
+      : {};
+  const workflowType =
+    (typeof body.saveWorkflowType === "string" && body.saveWorkflowType) ||
+    (typeof formal.workflowType === "string" && formal.workflowType) ||
+    "";
+  const description = saveDesc.trim() ? saveDesc : "";
+  return {
+    templateId: id,
+    title,
+    description,
+    workflowType,
+    product: String(item.product ?? formal.product ?? "aics"),
+    market: String(item.market ?? formal.market ?? "global"),
+    locale: String(item.locale ?? formal.locale ?? "und"),
+    version: typeof formal.version === "string" ? formal.version : "1",
+    audience: typeof formal.audience === "string" ? formal.audience : "general",
+    sourceTaskId: typeof body.sourceTaskId === "string" ? body.sourceTaskId : "",
+    sourceResultId: typeof body.sourceResultId === "string" ? body.sourceResultId : "",
+    createdAt: String(item.createdAt ?? ""),
+    updatedAt: String(item.updatedAt ?? ""),
+    isSystem: scope === "global",
+    content: body
+  };
+}
 
 /** 详情页展示用：优先顶层字段，其次 content 内同名（服务端演进兼容） */
 export function readTemplateDetailTopFields(row: TemplateCoreDetailRow): {
@@ -140,6 +380,9 @@ export function readTemplateDetailTopFields(row: TemplateCoreDetailRow): {
       const fm = formal[k];
       if (typeof fm === "string" && fm.trim()) return fm.trim();
     }
+    const sk = `save${k.charAt(0).toUpperCase()}${k.slice(1)}` as keyof typeof co;
+    const sv = co[sk as string];
+    if (typeof sv === "string" && sv.trim()) return sv.trim();
     return fallback;
   };
   return {
@@ -152,7 +395,7 @@ export function readTemplateDetailTopFields(row: TemplateCoreDetailRow): {
   };
 }
 
-/** E-3：自 Core content 规范化，供执行上下文与占位生成（单一真相） */
+/** E-3：自 Core content 规范化，供执行链使用的稳定结构 */
 export type TemplateCoreContentNormalized = {
   sourcePrompt: string;
   requestedMode: TaskMode;
@@ -224,41 +467,34 @@ export function normalizeTemplateCoreContent(
   };
 }
 
-function parseDetailPayload(body: unknown): TemplateCoreDetailRow {
-  const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  if (obj.success !== true || obj.data == null || typeof obj.data !== "object") {
-    const msg = typeof obj.message === "string" ? obj.message : "invalid_template_detail";
-    throw new Error(msg);
-  }
-  const d = obj.data as Record<string, unknown>;
-  const templateId = typeof d.templateId === "string" ? d.templateId.trim() : "";
-  const title = typeof d.title === "string" ? d.title : "";
-  const content = d.content;
-  if (!templateId || !title || content == null || typeof content !== "object") {
-    throw new Error("invalid_template_detail");
-  }
-  return d as TemplateCoreDetailRow;
-}
-
-/** GET /templates/:id */
+/** GET /v1/templates/:id；sys-* 无远端行时走内置合成 */
 export async function fetchTemplateById(templateId: string): Promise<TemplateCoreDetailRow> {
   const tid = templateId.trim();
   if (!tid) throw new Error("invalid_template_id");
-  const enc = encodeURIComponent(tid);
-  const { data, status } = await aiGatewayClient.get<unknown>(`/templates/${enc}`, {
+
+  const local = builtinTemplateDetail(tid);
+  const { data: raw, status } = await apiClient.get<unknown>(`/v1/templates/${encodeURIComponent(tid)}`, {
     validateStatus: () => true
   });
-  assertOk(status, data);
-  return parseDetailPayload(data);
+
+  if (status === 404) {
+    if (local) return local;
+    throw new Error("template not found");
+  }
+
+  if (status < 200 || status >= 300) {
+    if (local) return local;
+    const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    const msg = typeof o.message === "string" ? o.message : `HTTP ${status}`;
+    throw new Error(msg || "请求失败");
+  }
+
+  const inner = normalizeV1ResponseBody(raw) as { item?: Record<string, unknown> };
+  const item = inner.item;
+  if (!item || typeof item !== "object") {
+    if (local) return local;
+    throw new Error("invalid_template_detail");
+  }
+  return v1GetItemToDetailRow(item as Record<string, unknown>);
 }
 
-/** DELETE /templates/:id — 仅用户自建模板 */
-export async function deleteTemplateById(templateId: string): Promise<void> {
-  const tid = templateId.trim();
-  if (!tid) throw new Error("invalid_template_id");
-  const enc = encodeURIComponent(tid);
-  const { data, status } = await aiGatewayClient.delete<unknown>(`/templates/${enc}`, {
-    validateStatus: () => true
-  });
-  assertOk(status, data);
-}

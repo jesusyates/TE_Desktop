@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance, isAxiosError } from "axios";
-import { AI_GATEWAY_BASE_URL, SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
+import { SHARED_CORE_BASE_URL } from "../config/runtimeEndpoints";
 import { CLIENT_VERSION } from "../config/clientVersion";
 import { clientSession } from "./clientSession";
 import { getCoreRequestHeaders } from "./coreRequestContext";
@@ -15,7 +15,7 @@ const apiTimeoutMs =
 
 function attachStandardRequestInterceptor(
   instance: AxiosInstance,
-  options: { attachCoreGatewayIdentity: boolean }
+  options: { attachDeviceIdentityHeaders: boolean }
 ): void {
   instance.interceptors.request.use(async (config) => {
     const token = await clientSession.getAccessTokenTrimmed();
@@ -33,7 +33,7 @@ function attachStandardRequestInterceptor(
     config.headers["X-Client-Preference-Locale"] = locale;
     config.headers["X-Client-Version"] = CLIENT_VERSION;
     config.headers["X-Client-Product"] = "aics";
-    if (options.attachCoreGatewayIdentity) {
+    if (options.attachDeviceIdentityHeaders) {
       const idHeaders = getCoreRequestHeaders();
       Object.assign(config.headers as Record<string, string>, idHeaders);
     }
@@ -97,22 +97,18 @@ function attachAuthResponseInterceptor(instance: AxiosInstance): void {
   );
 }
 
-function createHttpClient(baseURL: string, attachCoreGatewayIdentity: boolean): AxiosInstance {
+function createHttpClient(baseURL: string, attachDeviceIdentityHeaders: boolean): AxiosInstance {
   const instance = axios.create({
     baseURL,
     timeout: apiTimeoutMs
   });
-  attachStandardRequestInterceptor(instance, { attachCoreGatewayIdentity });
+  attachStandardRequestInterceptor(instance, { attachDeviceIdentityHeaders });
   attachAuthResponseInterceptor(instance);
   return instance;
 }
 
 /**
- * Shared Core（账户、偏好、AICS Domain API 等）。Auth v1 Step 3：401 时单次静默 refresh 后重放原请求，失败则清会话并回登录。
+ * 唯一 HTTP 客户端：`baseURL` = Shared Core（shared-core-backend）。
+ * 401：单次静默 refresh 后重放原请求，失败则清会话并回登录。
  */
 export const apiClient = createHttpClient(SHARED_CORE_BASE_URL, false);
-
-/**
- * AI 网关（analyze / plan / safety / result / memory / audit / usage 等）。自动附带与 apiClient 一致的客户端头 + Core 身份头。
- */
-export const aiGatewayClient = createHttpClient(AI_GATEWAY_BASE_URL, true);

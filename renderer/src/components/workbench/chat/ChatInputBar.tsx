@@ -31,10 +31,16 @@ export type ChatInputBarProps = {
   prompt: string;
   setPrompt: (v: string) => void;
   onSubmit: (payload: StartTaskPayload) => void;
+  /** 禁用模板芯片 / 模式 / 附件钮等「周边」；执行中应为 true，避免中途改上下文 */
   locked: boolean;
+  /**
+   * 仅禁用多行输入框（replay等只读场景）。**不得**因 `isBusy` / 提交飞行中为 true —与发送门控解耦（P0）。
+   */
+  disableTextInput: boolean;
+  /** 为 true 时禁止发送（空内容、replay、或 **仅** `chatSubmitInFlight` 短窗口）；**不得**含整条任务 `session.isBusy`（P0） */
   submitDisabled: boolean;
-  /** D-7-6F：须与 Workbench 的 execution 门控一致（`isBusy` ∪ Core 前置 async 飞行中），参与 canSend 与发送键 */
-  sessionBusy: boolean;
+  /** 非对话式主按钮文案：仅「提交前置 async」时为 true，非整段 executing */
+  submitInFlight?: boolean;
   /** D-7-3S：自热状态恢复首选模式（仅首帧） */
   initialTaskMode?: TaskMode;
   /** D-7-3S：模式变更时持久化 */
@@ -61,8 +67,9 @@ export const ChatInputBar = ({
   setPrompt,
   onSubmit,
   locked,
+  disableTextInput,
   submitDisabled,
-  sessionBusy,
+  submitInFlight = false,
   initialTaskMode,
   onTaskModeChange,
   error,
@@ -89,7 +96,7 @@ export const ChatInputBar = ({
     const sh = el.scrollHeight;
     el.style.height = `${Math.min(sh, convoTextareaMaxPx)}px`;
     el.style.overflowY = sh > convoTextareaMaxPx ? "auto" : "hidden";
-  }, [prompt, conversationalInput, locked]);
+  }, [prompt, conversationalInput, disableTextInput]);
 
   useEffect(() => {
     if (!templateBootstrap?.key) return;
@@ -97,6 +104,25 @@ export const ChatInputBar = ({
     onTaskModeChange?.(templateBootstrap.mode);
     // 仅响应模板页/URL 注入的 bootstrap，不把 onTaskModeChange 列入依赖以免父级每次 render 重放
   }, [templateBootstrap?.key, templateBootstrap?.mode]);
+
+  const busy = locked;
+  /** 发送钮 / Enter：与「周边 chrome 锁定」解耦，避免整条任务 isBusy 灰死按钮 */
+  const baseSendable = !submitDisabled && prompt.trim().length > 0;
+  const canSend = baseSendable;
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    // eslint-disable-next-line no-console -- P0 排障：发送门控
+    console.debug("[ChatInputBar] send gate", {
+      canSend,
+      submitDisabled,
+      submitInFlight,
+      promptEmpty: !prompt.trim(),
+      promptLen: prompt.length,
+      chromeLocked: locked,
+      textareaDisabled: disableTextInput
+    });
+  }, [disableTextInput, locked, submitDisabled, submitInFlight, canSend, prompt]);
 
   const addFiles = useCallback((files: File[]) => {
     setAttached((prev) => [...prev, ...files.map(fileToMeta)]);
@@ -106,16 +132,12 @@ export const ChatInputBar = ({
     setAttached((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
-  const busy = locked;
-  const baseSendable = !submitDisabled && !busy && prompt.trim().length > 0;
-  /** D-7-6F：Enter / 发送键共用；显式包含 !sessionBusy */
-  const canSend = baseSendable && !sessionBusy;
-
   const handleSend = () => {
     if (!canSend) return;
     const tid = appliedTemplate?.templateId.trim();
     onSubmit({
       prompt: prompt.trim(),
+      skipIntentPreview: true,
       ...(!conversationalInput && attached.length ? { attachments: [...attached] } : {}),
       requestedMode: taskMode,
       ...(tid ? { templateId: tid } : {})
@@ -190,12 +212,12 @@ export const ChatInputBar = ({
               placeholder={conversationalInput ? u.workbench.inputPlaceholder : u.console.superInputPh}
               autoComplete="off"
               rows={conversationalInput ? 1 : 2}
-              disabled={busy}
+              disabled={disableTextInput}
               onKeyDown={(e) => {
-                /* D-7-5O：Enter 提交，Shift+Enter 换行；空内容或不可发送时不提交 */
+                /* D-7-5O：Enter 提交，Shift+Enter 换行；不可发送时不拦截 Enter（P0：执行中仍可换行编辑） */
                 if (e.key !== "Enter" || e.shiftKey) return;
-                e.preventDefault();
                 if (!canSend) return;
+                e.preventDefault();
                 handleSend();
               }}
             />
@@ -204,7 +226,7 @@ export const ChatInputBar = ({
             <button
               type="button"
               className={`chat-input-bar__send-fab${!canSend ? " chat-input-bar__send-fab--disabled" : ""}`}
-              disabled={sessionBusy || !baseSendable}
+              disabled={!canSend}
               onClick={handleSend}
               aria-label={u.workbench.sendMessageAria}
             >
@@ -223,10 +245,10 @@ export const ChatInputBar = ({
             <button
               type="button"
               className={`ui-btn ui-btn--primary chat-input-bar__send`}
-              disabled={sessionBusy || !baseSendable}
+              disabled={!canSend}
               onClick={handleSend}
             >
-              {busy ? u.stage.runBusy : u.console.executionSession.actionStart}
+              {submitInFlight ? u.stage.runBusy : u.console.executionSession.actionStart}
             </button>
           )}
         </div>

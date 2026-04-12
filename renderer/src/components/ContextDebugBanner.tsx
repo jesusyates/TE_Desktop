@@ -22,11 +22,11 @@ export function ContextDebugBanner() {
       return;
     }
     apiClient
-      .get<unknown>("/v1/auth/me", { validateStatus: () => true })
+      .get<unknown>("/v1/account/session", { validateStatus: () => true })
       .then((r) => {
-        const inner = normalizeV1ResponseBody(r.data) as { success?: boolean; user?: { userId?: string } } | null;
-        if (r.status === 200 && inner?.success === true && inner.user?.userId)
-          setMeId(String(inner.user.userId));
+        const inner = normalizeV1ResponseBody(r.data) as { userId?: string } | null;
+        if (r.status === 200 && inner && typeof inner.userId === "string" && inner.userId.trim())
+          setMeId(inner.userId.trim());
         else setMeId("?");
       })
       .catch(() => setMeId("?"));
